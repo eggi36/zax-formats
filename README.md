@@ -16,3 +16,7 @@ Related repositories, next to this one in the same folder: **zax-editor** (the l
 4. `git config core.hooksPath tools/git-hooks` (the pre-push hook: no game data, no private names or paths).
 
 The game data is not included and must never go into the repository: every player brings the original assets from their own copy. Images generated from the game data are excluded from version control.
+
+## Licence
+
+MIT (`LICENSE`). This licence covers only the project's own code and documentation. It grants no right to "Zax: The Alien Hunter" itself: the game, its executable, data, texts, names and artwork belong to their rights holders, are not included, and every player brings them from their own copy.
