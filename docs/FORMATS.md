@@ -466,3 +466,24 @@ A binary serialised object tree. Objects start with `f32 27.0` + `f32 class sign
 ## 7. Configuration
 
 See `zax-decomp/docs/EXE_FINDINGS.md`. In short: `.\Config.INI` in the game folder (actually `Zax.CFG`), read via `GetPrivateProfileIntA`.
+
+## 8. Save games (`SaveGames/*.sav`)
+
+[verified 2026-11-07 on 126 save games of the German 1308 build (the save game set of `zax-testtools` and the quick saves of test runs): every file follows the layout below, every embedded stream unpacks to its stated size; code: `App_LoadLayerStream` `0x59e3e0`, the save `0x5a0c80` (App slot 109), loading `0x4f3e70` (World slot 74), `Pack`/`Unpack` `0x5c3b40`/`0x5c3ba0`, `zax-decomp/docs/DECOMPILATION.md`]
+
+A save game is the text format of section 2 in three parts; the first two stay unpacked so the load screen can list a save without unpacking it.
+
+1. **`CZaxSaveGameStats`** (text) – what the load screen shows: `Save Date and Time` (text) and `SaveDateAndTimeNumeric` (Unix time), `Current Mission` (the mission with its objectives and the par statistics, empty outside a mission), `Screen Shot=CFrame(200,150,16)` (the preview, 16-bit pixels as hex lines – about 120,000 of the header's characters), `Player Health`, `Elapsed Time`, `Map Name`, `Ore In Inventory`, `Crystals In Inventory`, `SaveGame FileName`, `Item List` (the inventory lines as the screen shows them: category, label, quantity, colours), `Save Game Name`.
+2. **`CSwappedLayerFilenameMappingTable`** (text with embedded binary) – the levels visited before, which the game keeps outside memory: `Layer Mapping Array` with one `CSwappedLayerFilenameMapping` per level (`Partial Layer Name`, `Current Temp File`, `Mission Temp File`, `Has Expired`, `Expired This Mission`), then `Mission Marker Temp File` and `LRU LayerSaveData Array`. A non-empty `TempFile` holds a line `Length=<n> bytes`, the line `#### BEGIN TEMPORARY FILE ####`, exactly `n` raw bytes and the line `#### END TEMPORARY FILE ####`. The raw bytes are a packed stream as in part 3: in the 126 saves 1,761 temporary files, 1,638 of them a `CLayerSaveData` (a level's state) and 123 a whole `CLayerHolder` (`Mission Marker Temp File`). [assumption, from the names and the expiry code ("Attempting to load expired map"): `Current Temp File` is a level's state when Zax left it, `Mission Temp File` its state at the start of the mission, the mission marker the world at the mission's start for a restart]
+3. **The packed body**: three little-endian dwords – the mark `0x3e9` (1001), the packed size, the unpacked size – then one zlib stream (`compress2` level −1) of exactly the packed size, which ends the file. A stream without the mark is read unpacked (`0x59e3e0`). Unpacked, it holds five top-level objects:
+
+| Object | Content |
+|---|---|
+| `CLayerHolder` | `Referenced Object List Location` (the offset of the line `Referenced Objects` in the unpacked text [verified: all 126]), `Object ID`, `UniqueID`, the playing times, `Current Active Layer`, and `Layer=CLayerSaveData`: the current level with every object in its current state – a level file (section 2.1) plus runtime state (`Has Begin Been Called`, `Shake Time`, …), the `Fog Of War` map (section 5, "Fog of war": what was uncovered stays uncovered) and the way point map |
+| `CCharacterListHolder` | the players: references to their characters (`Player=0x… (CEntityWalking)`) |
+| `CZaxSaveData` | `Mission Manager` (missions and their state), `Voice Log Array Data`, `NonInteractive Sequence`, `GameType Specific Data` (the statistics of the game type), `Difficulty` |
+| `COtherMapList` | `ActionList`: actions waiting for other maps |
+| `Referenced Objects` | the number of referenced objects and their `Object ID`s |
+
+- **`Object ID`s are heap addresses** of the running game: every saved object carries its address as ID, and references between objects (`Player=0x029FA664 (CEntityWalking)`) use these IDs [confirmed: code; `zax-decomp/docs/DECOMPILATION.md`, "Batch 6-11"]. Two saves of the same game state from different runs therefore differ in their IDs unless the heap is laid out alike (the decompilation's comparisons renumber them, or fix the heap).
+- Sizes in the 126 saves: 127,658 to 2,470,268 bytes; the body unpacks to 119,639 to 1,341,832 bytes.
