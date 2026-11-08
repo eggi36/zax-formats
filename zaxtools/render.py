@@ -191,21 +191,161 @@ def ground_values(level: Level, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
     return vals[py - b0 * plasma.TILE, px - a0 * plasma.TILE]
 
 
-def render_ground(level: Level, assets: Assets, box, step: int = 1, surfaces: bool = True) -> np.ndarray:
-    """Ground in the world area box=(x0, y0, x1, y1), every ``step``-th world coordinate.
-    ``surfaces``: also draw polygons on the ground (CRenderablePolygon, On Ground=1) (the editor
-    shows them as a layer of their own)."""
+GROUND_CHUNK = 512        # output pixels per side of the pieces Ground computes one after the other
+
+
+def _mix_tables() -> list[np.ndarray]:
+    """``mix16`` for one channel as a table [k, a, b] -> uint8 (k = alpha >> 3 or >> 2, a and b the 8-bit
+    texture values): the same integer arithmetic on the same RGB565 levels, for every input at once."""
+    values = np.repeat(np.arange(256, dtype=np.float32)[:, None], 3, 1)
+    levels = np.rint(values * _DEPTH / 255).astype(np.int32)                     # as mix16: (256, 3)
+    out = []
+    for ch in range(3):
+        q, shift, depth = levels[:, ch], int(_SHIFT[ch]), int(_DEPTH[ch])
+        a5, b5 = q[:, None], q[None, :]
+        table = np.empty((1 << shift, 256, 256), np.uint8)
+        for k in range(1 << shift):         # one k at a time: small intermediates
+            c = a5 + np.floor_divide((b5 - a5) * k, 1 << shift)
+            table[k] = c * 255 // depth
+        out.append(table.ravel())
+    return out
+
+
+_MIX: list[np.ndarray] = []
+
+
+def _bytes(words: np.ndarray) -> np.ndarray:
+    """RGBX words (h, w) uint32 (R in the low byte) as (h, w, 4) uint8."""
+    if not np.little_endian:
+        words = words.byteswap()
+    return words.view(np.uint8).reshape(*words.shape, 4)
+
+
+class Ground:
+    """The ground of a level prepared for drawing, piece by piece and in small integer types (~10 bytes per
+    pixel of a piece instead of ~150 for the whole box at once): the textures packed as RGBX words, tables
+    over the 256 ground values for the band and the blend alpha ``int(w * 255)`` (``blend_weight``), and
+    ``mix16`` as tables per channel. All are built with the very expressions of ``blend_weight`` and
+    ``mix16`` applied to every possible input (each step is a function of the ground value or of the two
+    texture values and alpha alone; the rest is integer arithmetic), so the pixels are exactly theirs
+    [verified: all 112 levels, step 1 and 2, byte for byte against the former whole-box computation].
+
+    ``elevations``/``seeds`` are a snapshot of the grid (``refresh_grid`` after painting); the rest
+    changes only with the texture list or ``Blending`` (then build a new one). ``rgbx``/``rgb`` may run
+    in another thread than the one that changes the level (the plasma cache is locked)."""
+
+    def __init__(self, level: Level, assets: Assets):
+        names = level.ground_textures
+        tex = np.stack([_tile128(assets.texture(n)) for n in names])     # raises without textures, as before
+        t8 = tex.astype(np.uint8)
+        if not np.array_equal(t8, tex):                  # decoded frames are whole numbers 0..255
+            raise ValueError('ground texture values are not 8-bit integers')
+        self.count = len(names)
+        self.texels = (t8[..., 0].astype(np.uint32) | t8[..., 1].astype(np.uint32) << 8
+                       | t8[..., 2].astype(np.uint32) << 16 | np.uint32(0xff000000)).ravel()
+        band, w = blend_weight(np.arange(256, dtype=np.uint8), self.count, blending(level))
+        band = band.astype(np.int32)
+        self.band_at = band * 128 * 128                  # offset of the band's texture in texels
+        self.next_at = np.minimum(band + 1, self.count - 1) * 128 * 128
+        self.alpha = (np.asarray(w, np.float32) * 255).astype(np.int32)              # as mix16
+        if not _MIX:
+            _MIX[:] = _mix_tables()
+        self.refresh_grid(level)
+
+    def refresh_grid(self, level: Level) -> None:
+        """Take the level's current ``Elevations`` and ``Seeds``."""
+        self.elevations = level.elevations
+        self.seeds = level.seeds
+
+    def warm(self, box) -> None:
+        """Compute the plasma tiles under the world area box=(x0, y0, x1, y1) in one go (``rgbx`` asks for
+        them piece by piece, which is slower for an area that is not cached yet)."""
+        E = self.elevations
+        rows, cols = E.shape[0] - 1, E.shape[1] - 1
+        if rows < 1 or cols < 1:
+            return
+        x0, y0, x1, y1 = (int(v) for v in box)
+        a0, a1 = (min(max(x, 0), cols * plasma.TILE - 1) // plasma.TILE for x in (x0, x1 - 1))
+        b0, b1 = (min(max(y, 0), rows * plasma.TILE - 1) // plasma.TILE for y in (y0, y1 - 1))
+        plasma.CACHE.ensure(E, self.seeds, slice(b0, b1 + 1), slice(a0, a1 + 1))
+
+    def values(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+        """Ground values (uint8) at the grid ``ys`` x ``xs`` of world pixels (1-D int arrays), as
+        ``ground_values`` gives them for the full 2-D grids."""
+        E = self.elevations
+        rows, cols = E.shape[0] - 1, E.shape[1] - 1
+        if rows < 1 or cols < 1:
+            return np.full((len(ys), len(xs)), E.flat[0] if E.size else 0, np.uint8)
+        px = np.clip(xs, 0, cols * plasma.TILE - 1)
+        py = np.clip(ys, 0, rows * plasma.TILE - 1)
+        a0, a1 = int(px.min()) // plasma.TILE, int(px.max()) // plasma.TILE
+        b0, b1 = int(py.min()) // plasma.TILE, int(py.max()) // plasma.TILE
+        vals = plasma.CACHE.values(E, self.seeds, slice(b0, b1 + 1), slice(a0, a1 + 1))
+        return vals[np.ix_(py - b0 * plasma.TILE, px - a0 * plasma.TILE)]
+
+    def pieces(self, box, step: int = 1):
+        """(row, column, RGBX words (h, w) uint32) of the ground in the world area box=(x0, y0, x1, y1),
+        every ``step``-th world coordinate, in pieces of at most GROUND_CHUNK x GROUND_CHUNK; row/column
+        index the output image."""
+        x0, y0, x1, y1 = box
+        # the coordinates exactly as np.mgrid[y0:y1:step, x0:x1:step].astype(np.float32).astype(int)
+        xs = np.arange(x0, x1, step).astype(np.float32).astype(int)
+        ys = np.arange(y0, y1, step).astype(np.float32).astype(int)
+        if len(xs) > GROUND_CHUNK or len(ys) > GROUND_CHUNK:
+            self.warm(box)
+        for r in range(0, len(ys), GROUND_CHUNK):
+            for c in range(0, len(xs), GROUND_CHUNK):
+                yield r, c, self._piece(xs[c:c + GROUND_CHUNK], ys[r:r + GROUND_CHUNK])
+
+    def rgbx(self, box, step: int = 1) -> np.ndarray:
+        """The ground in the world area box=(x0, y0, x1, y1), every ``step``-th world coordinate, as uint8
+        (h, w, 4) R, G, B, 255 - the pixels of ``render_ground`` without surfaces."""
+        x0, y0, x1, y1 = box
+        h, w = len(np.arange(y0, y1, step)), len(np.arange(x0, x1, step))
+        out = np.empty((h, w), np.uint32)
+        for r, c, px in self.pieces(box, step):
+            out[r:r + px.shape[0], c:c + px.shape[1]] = px
+        return _bytes(out)
+
+    def rgb(self, box, step: int = 1) -> np.ndarray:
+        """As ``rgbx``, (h, w, 3)."""
+        return np.ascontiguousarray(self.rgbx(box, step)[..., :3])
+
+    def _piece(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+        """RGBX words (len ys, len xs) uint32 of the world pixels ``ys`` x ``xs``."""
+        v = self.values(xs, ys)
+        at = ((ys % 128) * 128).astype(np.int32)[:, None] + (xs % 128).astype(np.int32)[None, :]
+        px = self.texels.take(self.band_at[v] + at)               # band texture, RGBX words (h, w)
+        alpha = self.alpha[v]
+        mixed = np.flatnonzero(alpha)
+        if not len(mixed):
+            return px
+        va, at = v.ravel()[mixed], at.ravel()[mixed]
+        a = px.ravel()[mixed]
+        b = self.texels.take(self.next_at[va] + at)
+        al = alpha.ravel()[mixed]
+        word = np.full(len(mixed), 0xff000000, np.uint32)
+        for ch in range(3):
+            sh = 8 * ch
+            k = al >> (8 - int(_SHIFT[ch]))
+            i = (k << 16) | ((a >> sh) & 0xff).astype(np.int32) << 8 | ((b >> sh) & 0xff).astype(np.int32)
+            word |= _MIX[ch].take(i).astype(np.uint32) << sh
+        px.ravel()[mixed] = word
+        return px
+
+
+def render_ground(level: Level, assets: Assets, box, step: int = 1, surfaces: bool = True,
+                  ground: Ground | None = None) -> np.ndarray:
+    """Ground in the world area box=(x0, y0, x1, y1), every ``step``-th world coordinate, as float32 RGB
+    (whole numbers 0..255). ``surfaces``: also draw polygons on the ground (CRenderablePolygon, On
+    Ground=1) (the editor shows them as a layer of their own). ``ground``: a prepared ``Ground`` of the
+    level to reuse. The pixels are those of the former whole-box computation (plasma values ->
+    ``blend_weight`` -> ``mix16``), kept byte for byte (selftest, ``Ground``)."""
+    g = ground or Ground(level, assets)
     x0, y0, x1, y1 = box
-    E = level.elevations.astype(np.float32)
-    names = level.ground_textures
-    T = np.stack([_tile128(assets.texture(n)) for n in names])
-    N = len(names)
-    ys, xs = np.mgrid[y0:y1:step, x0:x1:step].astype(np.float32)
-    v = ground_values(level, xs.astype(int), ys.astype(int))
-    i, f = blend_weight(v, N, blending(level))
-    tx, ty = xs.astype(int) % 128, ys.astype(int) % 128
-    j = np.minimum(i + 1, N - 1)
-    img = mix16(T[i, ty, tx], T[j, ty, tx], f)
+    img = np.empty((len(np.arange(y0, y1, step)), len(np.arange(x0, x1, step)), 3), np.float32)
+    for r, c, px in g.pieces(box, step):
+        img[r:r + px.shape[0], c:c + px.shape[1]] = _bytes(px)[..., :3]
     if surfaces:
         _draw_surfaces(img, level, assets, box, step, ground=True)
     return img

@@ -225,6 +225,55 @@ def layer_frame(s: Sequence, a: PartAnim, index: int, t: float | None) -> int | 
     return index
 
 
+def timed_next(seconds: float, fps: float, offset: int) -> float:
+    """The first time after ``seconds`` at which ``timed_frame(t, fps, offset)`` gives another frame (it moves
+    on whole milliseconds only); inf if it never changes. Exact: the candidate milliseconds are evaluated with
+    the same arithmetic as ``timed_frame`` (if no change turns up within two frame periods - float32 rounding
+    of a large sum can hold a frame a little longer - the end of that range is returned, to look again)."""
+    f32 = float(np.float32(fps))
+    if not f32 or not math.isfinite(f32):
+        return math.inf
+    ticks = int(math.floor(seconds * 1000))
+    off = offset & OFFSET_MASK
+    now = np.rint(np.float32((ticks & TICK_MASK) * f32 * 0.001 + off))
+    span = int(math.ceil(2000 / abs(f32))) + 4
+    cand = np.arange(ticks + 1, ticks + 1 + span, dtype=np.int64)
+    x = np.rint(((cand & TICK_MASK) * f32 * 0.001 + off).astype(np.float32))
+    hit = np.flatnonzero(x != now)
+    tick = int(cand[hit[0]]) if len(hit) else int(cand[-1])
+    return (tick + 0.5) / 1000          # inside that millisecond: floor(t * 1000) == tick
+
+
+def entity_next(a: PartAnim, current: Sequence | None, t: float | None) -> float:
+    """The first time after ``t`` at which ``frame_index(a, current, ·)`` can change; inf if it stands still
+    (a tiny bit after the exact moment, so the frame has turned by then)."""
+    if not a.animated or current is None or t is None:
+        return math.inf
+    n, fps = current.frames_per_rotation, current.fps
+    if n < 2 or fps <= 0 or not a.moving:
+        return math.inf
+    if a.loop is not None and a.loop.synchronize:
+        return timed_next(t, fps, 0)
+    # f + fps * t (backwards: f - fps * t) - with ping-pong as well - turns its floor at whole numbers only
+    if a.loop is not None and a.loop.backwards:
+        p = a.frame - fps * t
+        k = math.ceil(p) - 1
+        nxt = (a.frame - k) / fps
+    else:
+        p = a.frame + fps * t
+        k = math.floor(p) + 1
+        nxt = (k - a.frame) / fps
+    return max(nxt, t) + 1e-6
+
+
+def layer_next(s: Sequence, a: PartAnim, t: float | None) -> float:
+    """The first time after ``t`` at which the "Auto-Animate" frame of layer ``s`` (``layer_frame``) can
+    change; inf for the other layers (they follow the entity's frame index, ``entity_next``)."""
+    if t is None or s.frames_per_rotation == 1 or not s.auto_animate:
+        return math.inf
+    return timed_next(t, s.fps, 0 if s.sync_auto else a.phase)
+
+
 def layer_resting(s: Sequence, a: PartAnim) -> bool:
     """Draw item byte +0x24 = 0: "Stationary" kept and no "Auto-Animate" (fade 1, no ghost flag)."""
     return not a.moving and not s.auto_animate

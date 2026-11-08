@@ -245,6 +245,12 @@ class Catalog:
         return cls({m['path']: ModelInfo(**m) for m in data['models']}, data['signature'])
 
     @classmethod
+    def cached(cls, ds: DataSource, cache_dir: Path, exe: str | Path | None = None) -> 'Catalog | None':
+        """The saved catalogue if it is current; None if it would have to be built (``open``)."""
+        sig = signature(ds, exe)
+        return cls.load(Path(cache_dir) / f'katalog-{sig[:16]}.json', sig)
+
+    @classmethod
     def open(cls, ds: DataSource, cache_dir: Path, progress=None, exe: str | Path | None = None) -> 'Catalog':
         """Load from the cache or build anew and save."""
         sig = signature(ds, exe)

@@ -21,6 +21,8 @@ Verified: generators and tiles match the original code executed in an emulator b
 """
 from __future__ import annotations
 
+import threading
+
 import numpy as np
 
 TILE = 64
@@ -121,14 +123,33 @@ def tiles(keys: np.ndarray) -> np.ndarray:
 
 class PlasmaCache:
     """Ground values per pixel; tiles are cached by their 7 values so that painting only rebuilds
-    changed tiles."""
+    changed tiles. Safe to use from several threads (one at a time)."""
 
     def __init__(self):
         self._tiles: dict[bytes, np.ndarray] = {}
+        self._lock = threading.Lock()
+
+    BATCH = 1024        # tiles computed at once (~20 MB of intermediates)
+    LIMIT = 20000       # tiles kept (64 x 64 bytes each)
 
     def values(self, E: np.ndarray, S: np.ndarray, rows: slice, cols: slice) -> np.ndarray:
         """Values of the tiles ``rows`` x ``cols`` (tile (b, a) = grid points b..b+1, a..a+1)
         as an image ((len rows) * 64, (len cols) * 64)."""
+        with self._lock:
+            ids, nb, na = self._ensure(E, S, rows, cols)
+            out = np.empty((nb * TILE, na * TILE), np.uint8)
+            for n, i in enumerate(ids):
+                r, c = divmod(n, na)
+                out[r * TILE:(r + 1) * TILE, c * TILE:(c + 1) * TILE] = self._tiles[i]
+            return out
+
+    def ensure(self, E: np.ndarray, S: np.ndarray, rows: slice, cols: slice) -> None:
+        """Compute the missing tiles of ``rows`` x ``cols`` ahead (few large batches are much faster than
+        many small ones)."""
+        with self._lock:
+            self._ensure(E, S, rows, cols)
+
+    def _ensure(self, E, S, rows, cols):
         E = np.asarray(E, np.int32)
         S = np.asarray(S, np.int32)
         if S.shape != E.shape:
@@ -142,16 +163,14 @@ class PlasmaCache:
         ids = [k.tobytes() for k in flat]
         missing = {i: k for i, k in zip(ids, flat) if i not in self._tiles}
         if missing:
-            new = tiles(np.array(list(missing.values())))
-            for i, t in zip(missing, new):
-                self._tiles[i] = t[:TILE, :TILE]
-            if len(self._tiles) > 20000:
+            keys = list(missing)
+            for n in range(0, len(keys), self.BATCH):
+                part = keys[n:n + self.BATCH]
+                new = tiles(np.array([missing[i] for i in part]))
+                for i, t in zip(part, new):
+                    self._tiles[i] = t[:TILE, :TILE].copy()
+            if len(self._tiles) > self.LIMIT:
                 self._tiles = {i: self._tiles[i] for i in set(ids)}
-        out = np.empty((len(b) * TILE, len(a) * TILE), np.uint8)
-        for n, i in enumerate(ids):
-            r, c = divmod(n, len(a))
-            out[r * TILE:(r + 1) * TILE, c * TILE:(c + 1) * TILE] = self._tiles[i]
-        return out
-
+        return ids, len(b), len(a)
 
 CACHE = PlasmaCache()

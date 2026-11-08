@@ -160,6 +160,7 @@ def main():
             (64, 64, 64, 64, 0, 0, 0), (1, 0, 0, 2, 0, 0, 0), (192, 128, 128, 192, 0, 0, 0)]
     digest = hashlib.sha1(plasma.tiles(np.array(keys)).tobytes()).hexdigest()
     report('Ground: plasma fractal like Zax.exe (checksum)', int(digest == 'c745b2ed2c8bed9910e8453d72107918c038df1c'), 1)
+    _check_ground_pieces(ds, zaxs, report)
     scripts, stats, total, ok = links.DialogScripts(ds), Counter(), 0, 0
     for f in zaxs:
         lv = Level.from_bytes(ds.read(f))
@@ -950,6 +951,73 @@ def _check_rules_header(ds, report, zaxs):
            ok, len(zaxs) + 1, bad[:3] or '')
 
 
+def _check_ground_pieces(ds, zaxs, report):
+    """render.Ground (pieces, tables, small integer types) against the former whole-box computation (plasma values
+    -> blend_weight -> mix16 over np.mgrid), which this keeps as the reference: boxes across piece and plasma tile
+    borders, at odd offsets, step 1 and 2, on every level. (All 112 levels whole, step 1 and 2, were compared byte
+    for byte when Ground replaced it, 2026-11-08.)"""
+    def reference(lv, assets, box, step):
+        x0, y0, x1, y1 = box
+        T = np.stack([render._tile128(assets.texture(n)) for n in lv.ground_textures])
+        N = len(lv.ground_textures)
+        ys, xs = np.mgrid[y0:y1:step, x0:x1:step].astype(np.float32)
+        v = render.ground_values(lv, xs.astype(int), ys.astype(int))
+        i, f = render.blend_weight(v, N, render.blending(lv))
+        tx, ty = xs.astype(int) % 128, ys.astype(int) % 128
+        return render.mix16(T[i, ty, tx], T[np.minimum(i + 1, N - 1), ty, tx], f)
+    assets = render.Assets(ds)
+    ok = n = 0
+    for k, f in enumerate(zaxs):
+        lv = Level.from_bytes(ds.read(f))
+        W, H = lv.size
+        g = render.Ground(lv, assets)
+        for step, (x, y, w, h) in ((1, (480 + 37 * k % 61, 450, 100, 140)), (2, (W - 731, H - 517, 731, 517)),
+                                   (1, (-5, -3, 70, 66)), (2, (1, 1, 1100, 9))):
+            box = (x, y, x + w, y + h)
+            n += 1
+            ok += np.array_equal(render.render_ground(lv, assets, box, step, surfaces=False, ground=g),
+                                 reference(lv, assets, box, step))
+    report('Ground: render.Ground (pieces, tables) equals the whole-box computation', ok, n)
+
+
+def _check_next_changes(ds, assets, sample, got) -> list:
+    """anim.timed_next / entity_next / layer_next (the editor redraws an object only when its frame changes):
+    for the animated objects of the levels at several times, the frame stays the same at every millisecond (and
+    just before the moment) until the time they give, and changes there. Returns the failures."""
+    from zaxtools import anim
+    bad, tried = [], 0
+    rng = np.random.default_rng(7)
+    for f in sample(ds.list('Levels/', '.zax'))[::4]:
+        for p in Level.from_bytes(ds.read(f)).parts:
+            m = assets.model(p.model) if p.position is not None and p.model else None
+            if m is None:
+                continue
+            a = anim.part_animation(p, m)
+            a.phase = anim.phase_of(p)
+            layers = [s for _, s in m.layers(a.sequence)]
+            cur = next((s for o, s in m.layers(a.sequence) if o == 2), None)
+            for t in rng.uniform(0, 3000, 2).tolist() + [0.0]:
+                for s in layers:
+                    nxt = anim.layer_next(s, a, t)
+                    if nxt == math.inf:
+                        continue
+                    tried += 1
+                    off = 0 if s.sync_auto else a.phase
+                    now = anim.timed_frame(t, s.fps, off)
+                    ms = np.arange(math.floor(t * 1000) + 1, math.floor(nxt * 1000))
+                    same = all(anim.timed_frame(x / 1000 + 0.0002, s.fps, off) == now for x in ms[:400])
+                    if not same or anim.timed_frame(nxt, s.fps, off) == now and len(ms) < 2000 / abs(s.fps) + 2:
+                        bad.append(f'{p.model} {s.name} t={t}')
+                nxt = anim.entity_next(a, cur, t)
+                if nxt < math.inf:
+                    tried += 1
+                    now = anim.frame_index(a, cur, t)
+                    if anim.frame_index(a, cur, nxt - 2e-6) != now or anim.frame_index(a, cur, nxt) == now:
+                        bad.append(f'{p.model} entity t={t}')
+    got['next-change cases'] = tried
+    return bad[:3]
+
+
 def _check_animation(ds, report, sample, quick):
     """zaxtools.anim against values from the code (0x55fee0, 0x48feb0, 0x55e4b0, 0x4cb590) and the counts
     of the original levels; the renderer's polygon outlines and overlays."""
@@ -994,6 +1062,7 @@ def _check_animation(ds, report, sample, quick):
                 if k is not None and not 0 <= k < s.frames_per_rotation:
                     bad.append(f'{f}: {p.model} {s.name} frame {k}')
     got.update(counts)
+    checks += [not _check_next_changes(ds, assets, sample, got)]
     if not quick:                                           # full run: the counts of the originals
         checks += [counts['looped'] == 817, counts['idle'] == 2770]
     checks += [not bad]

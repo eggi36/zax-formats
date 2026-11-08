@@ -70,8 +70,9 @@ zaxtools/          library (numpy + Pillow only)
   font.py          bitmap fonts Cache/Fonts (.seq/.seq16, CFont), text as an RGBA image
   mdl.py           models, sequences, layers, rotation_index (confirmed: code 0x55fdd0; verified, step 20)
   anim.py          animation as in the game: the frame a layer shows, how it advances (Auto-Animate, Current Frame,
-                   looped AIs), whether an object rests (drawn into the cached background or every frame)
-  render.py        draw ground + polygons + objects
+                   looped AIs), whether an object rests (drawn into the cached background or every frame); when the
+                   frame changes next (timed_next, entity_next, layer_next)
+  render.py        draw ground + polygons + objects; the ground in pieces through tables (Ground, FORMATS.md 2.2)
   minimap.py       draw the mini map as the game does (RenderLayer + CBlendFilter, 0x4ed150), mapping, placeholders
   newlevel.py      new empty level without a template: fixed header values of the originals + user input
   links.py         links via Name (reference fields, ranges #a-b#), dialogue texts from .RDS

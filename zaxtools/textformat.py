@@ -129,33 +129,33 @@ def loads(text: str) -> Node:
     doc = Node(None, '<document>')
     doc.trailing_newline = trailing_newline       # type: ignore[attr-defined]
     stack = [doc]
+    children = doc.children
+    # indentation is tabs only (lstrip): "default indentation" = as many tabs as the depth
+    strips = [line.lstrip('\t') for line in lines]
+    n = len(lines)
     i = 0
-    while i < len(lines):
-        raw = lines[i]
-        stripped = raw.lstrip('\t')
-        ind = raw[:len(raw) - len(stripped)]
+    while i < n:
+        stripped = strips[i]
+        nind = len(lines[i]) - len(stripped)
         depth = len(stack) - 1
-        own_indent = None if ind == '\t' * depth else ind
-        if stripped == '}' and len(stack) > 1:
+        if stripped == '}' and depth:
             node = stack.pop()
-            node.brace_indent = (node.brace_indent[0], None if ind == '\t' * (len(stack) - 1) else ind)
+            children = stack[-1].children
+            node.brace_indent = (node.brace_indent[0], None if nind == depth - 1 else lines[i][:nind])
             i += 1
             continue
-        nxt = lines[i + 1] if i + 1 < len(lines) else None
-        if stripped not in ('{', '}') and nxt is not None and nxt.lstrip('\t') == '{':
-            k, v = _split(stripped)
-            node = Node(k, v, indent=own_indent)
-            nind = nxt[:len(nxt) - len(nxt.lstrip('\t'))]
-            node.brace_indent = (None if nind == '\t' * depth else nind, None)
-            stack[-1].children.append(node)
+        own_indent = None if nind == depth else lines[i][:nind]
+        k, sep, v = stripped.partition('=')
+        if i + 1 < n and strips[i + 1] == '{' and stripped != '{' and stripped != '}':
+            node = Node(k, v, indent=own_indent) if sep else Node(None, stripped, indent=own_indent)
+            nn = len(lines[i + 1]) - 1
+            node.brace_indent = (None if nn == depth else lines[i + 1][:nn], None)
+            children.append(node)
             stack.append(node)
+            children = node.children
             i += 2
             continue
-        k, v = _split(stripped)
-        if k is None:
-            stack[-1].children.append(Raw(v, indent=own_indent))
-        else:
-            stack[-1].children.append(Entry(k, v, indent=own_indent))
+        children.append(Entry(k, v, own_indent) if sep else Raw(stripped, own_indent))
         i += 1
     if len(stack) != 1:
         raise ValueError('unbalanced braces in the text')
