@@ -101,9 +101,11 @@ def _patch_model(ds: DataSource, schema, src: str, out_data: Path, name: str, ho
     """Copy model ``src`` into ``out_data/Cache/Models/Test/<name>.mdl16`` with a broken value."""
     d = bytearray(ds.read(f'Cache/Models/{src}.mdl16'))
     if how == 'rotations':
-        s = next(s for s in mdl.read_sequences(bytes(d)) if s.rotations > 1)
-        o = s.offset
-        struct.pack_into('<I', d, o + 12, s.total + 1)           # total frames, no longer divisible
+        # the rotation count no longer divides the frames; the frames themselves stay valid (a changed frame total
+        # would make the frame reader run past the sequence, with the original game too)
+        s = next(s for s in mdl.read_sequences(bytes(d)) if s.rotations > 2 and s.total % (s.rotations - 1))
+        o = s.offset + 25 + struct.unpack_from('<I', d, s.offset + 21)[0] + 12
+        struct.pack_into('<I', d, o, s.rotations - 1)
     else:
         from zaxtools.modelhead import ModelHead
         mh = ModelHead(schema)
@@ -177,22 +179,12 @@ def broken_cases(ds: DataSource, schema, exe, out: Path) -> bool:
         walking(lv).set('Model', _patch_model(ds, schema, walking(lv).model, out_data, 'Rotations', 'rotations'))
 
     def bounce(lv):
+        near_start(lv, walking(lv))
         walking(lv).set('Model', _patch_model(ds, schema, walking(lv).model, out_data, 'Bounce', 'bounce'))
 
     def dialog(lv):
-        lv.parts[0].node.children.append(tf.Node('Activity', 'Array', [
-            tf.Entry('Item Count', '1'),
-            tf.Node('Array Item', 'CZaxDialogAction', [tf.Entry('Script', 'ACT 1/M1M2/Mission01n2'),
-                                                     tf.Entry('Line', 'No such line')])]))
-
-    def shield(lv):
-        p = _first(lv, lambda p: p.cls == 'CEntityBase')
-        act = p.node.block('Activity')
-        if act is None:
-            act = tf.Node('Activity', 'Array', [tf.Entry('Item Count', '0')])
-            p.node.children.append(act)
-        act.children.append(tf.Node('Array Item', 'CShieldAI', []))
-        act.update_array_count()
+        # a real dialogue action of the level (there: "Enter Action" of a CTouchingPolygonTriggerAI), its line renamed
+        next(n for n in _nodes(lv.root) if n.value == 'CZaxDialogAction').set('Line', 'No such line')
 
     def add_activity(part, node):
         act = part.node.block('Activity')
@@ -202,17 +194,37 @@ def broken_cases(ds: DataSource, schema, exe, out: Path) -> bool:
         act.children.append(node)
         act.update_array_count()
 
+    def near_start(lv, part):
+        s = _first(lv, lambda p: p.name == 'Game Start').position
+        part.position = (s[0] + 60, s[1])
+        part.set('Stationary', '0')        # a stationary part gets no updates, its AIs would never run
+        part.set('Active', '1')
+
+    def shield(lv):
+        add_activity(_first(lv, lambda p: p.cls == 'CEntityBase'), tf.Node('Activity', 'CShieldAI', []))
+
     def patrol(lv):
-        poly = tf.Node('Level Part', 'CFreeRangePoly', [tf.Entry('Name', 'Check Patrol Path'),
-                                                         tf.Entry('Polygon', '100, 100, 300, 100')])
-        lv.insert_part(poly)
-        add_activity(walking(lv), tf.Node('Array Item', 'CPatrolPathAI', [
+        # the element's key is the array's element name ("Activity"; "Array Item" is only for arrays declared with
+        # that alternate name). As "slave to hut" in the original level 04: the path AI alone in the Activity.
+        w = walking(lv)
+        near_start(lv, w)
+        x, y = w.position
+        lv.insert_part(tf.Node('Level Part', 'CFreeRangePoly', [tf.Entry('Name', 'Check Patrol Path'),
+                                                                 tf.Entry('Polygon', f'{x:g}, {y:g}, {x + 200:g}, {y:g}')]))
+        act = w.node.block('Activity')
+        if act is not None:
+            w.node.children.remove(act)
+        add_activity(w, tf.Node('Activity', 'CPatrolPathAI', [
             tf.Entry('Path Poly', 'Check Patrol Path'), tf.Entry('Order', 'Random'), tf.Entry('Ignore last point', '0')]))
 
     def sethome(lv):
+        # as in the original levels: "Action" inside the "Action" array of a CMultipleActionsAction, under a timer
         target = _first(lv, lambda p: p.cls == 'CEntityBase' and p.name)
-        add_activity(walking(lv), tf.Node('Array Item', 'CSetHomeAction', [
-            tf.Entry('Actor', target.name), tf.Entry('New Home Position', target.name)]))
+        near_start(lv, walking(lv))
+        action = tf.Node('Action', 'CMultipleActionsAction', [tf.Node('Action', 'Array', [
+            tf.Entry('Item Count', '1'),
+            tf.Node('Action', 'CSetHomeAction', [tf.Entry('Actor', target.name), tf.Entry('New Home Position', target.name)])])])
+        add_activity(walking(lv), tf.Node('Activity', 'CRepeatTimerTriggerAI', [tf.Entry('Delay Between Actions', '1'), action]))
 
     def walking_ai_root(lv):
         from zaxtools import children as chl
