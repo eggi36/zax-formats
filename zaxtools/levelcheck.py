@@ -51,7 +51,7 @@ CHECKS = {
     'array-count': ('error', QT_TRANSLATE_NOOP('levelcheck', 'Count does not match the elements')),
     'missing-model': ('error', QT_TRANSLATE_NOOP('levelcheck', 'Model missing')),
     'missing-sequence': ('error', QT_TRANSLATE_NOOP('levelcheck', 'Sequence missing in the model')),
-    'rotation-frames': ('error', QT_TRANSLATE_NOOP('levelcheck', 'Frames not divisible by the rotations')),
+    'rotation-frames': ('warning', QT_TRANSLATE_NOOP('levelcheck', 'Frames not divisible by the rotations')),
     'bounce-factor': ('error', QT_TRANSLATE_NOOP('levelcheck', 'Bounce Factor outside 0 … 1')),
     'flag-empty-name': ('error', QT_TRANSLATE_NOOP('levelcheck', 'Empty name in a name list')),
     'flag-unknown-name': ('error', QT_TRANSLATE_NOOP('levelcheck', 'Unknown name in a name list')),
@@ -786,11 +786,13 @@ def _part_checks(p: LevelPart, level: Level, ctx: Context, add) -> None:
             if s.rotations == 0 or (s.rotations > 1 and s.total % s.rotations):
                 add('rotation-frames', translate('levelcheck', 'Sequence “{sequence}” of the model “{model}”: {frames} '
                                                                'frames cannot be divided among {rotations} rotations. '
-                                                               'The game divides by the rotations and ends with "There '
-                                                               'are not an equal number of frames per rotation…" when '
-                                                               'it loads the sequence by its name.').format(
+                                                               'The game loads such a sequence (its check for this is '
+                                                               'never reached), the frames may fall on the wrong '
+                                                               'rotations.').format(
                     sequence=s.name, model=model, frames=s.total, rotations=s.rotations),
-                    'zax-decomp/docs/ORIGINAL_BUGS.md 2.14; CRotationSequence Slot 27 0x5600f0', node, 'Model', model)
+                    'zax-decomp/docs/ORIGINAL_BUGS.md 2.14; the fatal check of CRotationSequence slot 27 0x5600f0 is dead in '
+                    'build 1308 (0x713130 has no writer, the slot no caller); verified 2026-11-09, loads with the game',
+                    node, 'Model', model)
         if ctx.derives(p.cls, 'CEntityMovable'):
             head = ctx.model_head(model)
             bf = head.values.get('Bounce Factor') if head is not None else None
