@@ -18,6 +18,14 @@ Each entry: what goes wrong, when, the objects involved (level, part number in t
 - In the pack (`make_level_fixes.py`, 2026-11-09): a `CSucceedAction` added to step 0's `CMultipleActionsAction`. The patched level loads and starts in the port and in the original exe [verified: VM (x86)]; the second arrival at the cave, which is where the fix shows, was **not** reached in a test (three attempts to force it failed in the test setup): the effect stays [confirmed: code].
 - Fix: candidate (opt-in). In the data: step 0's success action must report success even when the targets are already active, e.g. a `CSucceedAction` added to its `CMultipleActionsAction` (whose result is the OR of all its actions, `MultipleActions_Execute` `0x4b87a0`, `zax-decomp/reimpl/src/action_slots.cpp`), or drop `Require Success To Advance`. Editor: possible warning for a `CSeriesAction` with `Require Success To Advance` whose step's result is a `CActivateAction` on objects other scripts activate too (open).
 
+
+**L.8 The deployed Companion Drone Light has no description** — `Levels/Global/Inventory Item Text.rds`, label `'Deployed Companion Drone Light' Description ` (with a trailing space)
+- What: the item's Info text is in the script, but its label ends with a space. `Item_Description` `0x4d67c0` builds the key `'<name>' Description` from the trimmed name and `CPropertyList::Lookup` `0x41e5a0` compares exactly, so the label never matches and the deployed drone shows the default "This item has no description" (the same mechanism as the tab-ended labels of `GERMAN.RED`, `FORMATS.md` 2).
+- When: the inventory Info of a deployed Companion Drone Light; in the standard `DATA.dat` and in the language packs checked (German, Spanish, Chinese, Russian), each with the same trailing space.
+- Evidence: [confirmed: code, as for the tab-ended labels; the label read from the data of each edition]; the Info window itself was not opened in a test.
+- In the language and fix packs of the private pack tools (2026-11-09/10): the space removed, the text unchanged (EnglishFix, GermanFix, 0SpanishFix, 0ChineseFix, RUSSIAN). Not in `LevelFixes.RED`, which holds only levels.
+- Fix: candidate (data). Editor: yes (a label with leading or trailing white space never matches).
+
 ---
 
 ## Minor findings (no visible effect found)
