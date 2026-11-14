@@ -160,7 +160,7 @@ KNOWN_MISSING = [
      'add Mute.frm16 (the same 630 bytes). Without it the 16-bit game draws the three mute boxes of Options -> Sound as '
      'plain check boxes with the word "Mute" (no image); with it they show the speaker image as in 8 bit (VM x86, '
      'original Zax.exe 1308, 800x600x16, runs 20261114-083931-6dfa without, 20261114-083937-ba9c with the private fix '
-     'pack LevelFixes.RED, which adds this file)', 'confirmed (data); effect: verified (VM)',
+     'pack DataFixes.RED, which adds this file)', 'confirmed (data); effect: verified (VM)',
      ('Cache/Interface/Mute.frm16',)),
     ('Interface/Splash Screen 2.bmp', 'other', ['Zax.exe: App_LoadGameData 0x5a01c0 (string 0x624e1c)'],
      'the first splash screen of the loading sequence; Splash Screen 3.bmp exists (docs/FORMATS.md 5.2)', 'confirmed',

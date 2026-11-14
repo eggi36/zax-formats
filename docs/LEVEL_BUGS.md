@@ -4,7 +4,7 @@ As of 2026-10-30. A collection of bugs in the shipped levels and scripts (`.zax`
 
 Each entry: what goes wrong, when, the objects involved (level, part number in the Tree List, name), the code that makes it happen, the evidence level, a fix idea, and whether the editor's level check could warn about it.
 
-**The fix pack**: `levels/make_level_fixes.py "<game folder>" -o LevelFixes.RED` of the private pack tools (zax-packs; in this repository until 2026-11-10) makes it from the player's own `DATA.dat` (L.1 and L.7; whole levels, so never shipped). Beside the game it is active in the original `Zax.exe` and in the port for as long as it lies there; the port's launcher lists it on its Packs page, where it can be unticked. With it in the folder the game is no longer the original: a recorded play of `01 Main` differs. L.2 to L.6 are left out on purpose: no visible effect is known, and making those scripts work would change the game in ways nobody has looked at.
+**The fix pack**: `levels/make_level_fixes.py "<game folder>" -o DataFixes.RED` (named LevelFixes.RED until 2026-11-14; it also carries one data fix outside the levels, the 16-bit mute image, `docs/FORMATS.md` `Cache/Interface/`) of the private pack tools (zax-packs; in this repository until 2026-11-10) makes it from the player's own `DATA.dat` (L.1 and L.7; whole levels, so never shipped). Beside the game it is active in the original `Zax.exe` and in the port for as long as it lies there; the port's launcher lists it on its Packs page, where it can be unticked. With it in the folder the game is no longer the original: a recorded play of `01 Main` differs. L.2 to L.6 are left out on purpose: no visible effect is known, and making those scripts work would change the game in ways nobody has looked at.
 
 ---
 
@@ -23,7 +23,7 @@ Each entry: what goes wrong, when, the objects involved (level, part number in t
 - What: the item's Info text is in the script, but its label ends with a space. `Item_Description` `0x4d67c0` builds the key `'<name>' Description` from the trimmed name and `CPropertyList::Lookup` `0x41e5a0` compares exactly, so the label never matches and the deployed drone shows the default "This item has no description" (the same mechanism as the tab-ended labels of `GERMAN.RED`, `FORMATS.md` 2).
 - When: the inventory Info of a deployed Companion Drone Light; in the standard `DATA.dat` and in the language packs checked (German, Spanish, Chinese, Russian), each with the same trailing space.
 - Evidence: [confirmed: code, as for the tab-ended labels; the label read from the data of each edition]; the Info window itself was not opened in a test.
-- In the language and fix packs of the private pack tools (2026-11-09/10): the space removed, the text unchanged (EnglishFix, GermanFix, 0SpanishFix, 0ChineseFix, RUSSIAN). Not in `LevelFixes.RED`, which holds only levels.
+- In the language and fix packs of the private pack tools (2026-11-09/10): the space removed, the text unchanged (EnglishFix, GermanFix, 0SpanishFix, 0ChineseFix, RUSSIAN). Not in `DataFixes.RED`, which holds only levels.
 - Fix: candidate (data). Editor: yes (a label with leading or trailing white space never matches).
 
 ---
