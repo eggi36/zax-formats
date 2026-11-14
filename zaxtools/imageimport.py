@@ -38,7 +38,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from . import frm, mdlfile, seq
+from . import frm, mdlfile, safepath, seq
+from .i18n import translate
 
 KINDS = ('image', 'sequence', 'model')
 BLIT_TYPES = ('Transparent Mask', 'Blend Black Bias', 'Blend Amplify Light')    # the modes of the shipped data
@@ -106,39 +107,41 @@ class ImportSpec:
 
 
 def check(spec: ImportSpec) -> list[str]:
-    """Problems that stop the import (English; the editor shows them)."""
+    """Problems that stop the import (English, translated through ``zaxtools.i18n``; the editor shows them)."""
     out = []
     if spec.kind not in KINDS:
-        out.append(f'unknown kind {spec.kind!r}')
+        out.append(translate('imageimport', 'unknown kind “{kind}”').format(kind=spec.kind))
     if not spec.name.strip() or any(c in spec.name for c in '/\\:*?"<>|~'):
-        out.append('the name is empty or contains one of / \\ : * ? " < > | ~')
-    if '~' in spec.folder or '..' in spec.folder.split('/') or '\\' in spec.folder:
-        out.append('the folder contains "~", ".." or a backslash')
+        out.append(translate('imageimport', 'the name is empty or contains one of / \\ : * ? " < > | ~'))
+    folder_bad = (spec.folder.strip('/') and safepath.relative_problem(spec.folder.strip('/')) is not None)
+    if '~' in spec.folder or '..' in spec.folder.split('/') or '\\' in spec.folder or folder_bad:
+        out.append(translate('imageimport', 'the folder contains “~”, “..”, “:”, an empty folder name or a backslash'))
     if not spec.images:
-        out.append('no image')
+        out.append(translate('imageimport', 'no image'))
     elif spec.kind == 'image' and len(spec.images) > 1:
-        out.append('an image takes one PNG; choose "image sequence" or "model" for a series')
+        out.append(translate('imageimport', 'an image takes one PNG; choose “image sequence” or “model” for a series'))
     for im in spec.images:
         h, w = im.shape[:2]
         if not (0 < w <= 2048 and 0 < h <= 2048):
-            out.append(f'image size {w}x{h} outside 1..2048')
+            out.append(translate('imageimport', 'image size {w}×{h} outside 1 … 2048').format(w=w, h=h))
             break
     if spec.kind == 'model' and not spec.sequence.strip():
-        out.append('the model needs a sequence name')
+        out.append(translate('imageimport', 'the model needs a sequence name'))
     if spec.mode not in BLIT_TYPES:
-        out.append(f'unknown blit type {spec.mode!r}')
+        out.append(translate('imageimport', 'unknown blit type “{mode}”').format(mode=spec.mode))
     return out
 
 
 def notes(spec: ImportSpec) -> list[str]:
-    """Hints that do not stop the import (English; the editor shows them)."""
+    """Hints that do not stop the import (English, translated through ``zaxtools.i18n``; the editor shows them)."""
     out = []
     if spec.texture and spec.images:
         if any(im.shape[:2] != TEXTURE_SIZE[::-1] for im in spec.images):
-            out.append('every shipped texture is 128x128; the ground takes only that size (other sizes in a surface '
-                       'are not tested)')
+            out.append(translate('imageimport', 'every shipped texture is 128×128; the ground takes only that size '
+                                                '(other sizes in a surface are not tested)'))
         if any((im[..., 3] < 255).any() for im in spec.images):
-            out.append('a texture is written without transparency: every pixel becomes opaque')
+            out.append(translate('imageimport', 'a texture is written without transparency: every pixel becomes '
+                                                'opaque'))
     return out
 
 
@@ -224,9 +227,9 @@ def write(files: dict[str, bytes], out_dir: Path, forbidden=()) -> list[Path]:
     if inside(out_dir, [f if Path(f).is_dir() else Path(f).parent for f in forbidden if f]):
         raise ValueError('the output folder lies inside the game data')
     written = []
-    for rel, data in files.items():
-        target = out_dir / rel
+    targets = [safepath.join_inside(out_dir, rel) for rel in files]      # every target checked before the first write
+    for target, data in zip(targets, files.values()):
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
+        safepath.atomic_write(target, data)
         written.append(target)
     return written

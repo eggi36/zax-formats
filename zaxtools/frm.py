@@ -58,10 +58,17 @@ class FrameHeader:
         return bool(self.flags & 0x2000)
 
 
+# the largest frame read (pixels): far above the game's images (the import takes up to 2048 x 2048), far below what a
+# forged 65535 x 65535 header would allocate
+MAX_PIXELS = 4096 * 4096
+
+
 def read_header(d: bytes, off: int = 0) -> FrameHeader:
     t, bpp, hx, hy, w, h, _, flags, _ = struct.unpack_from('<BBhhHHHHH', d, off)
     if t != 0x31:
-        raise ValueError('Kein Frame-Kopf an Offset %d' % off)
+        raise ValueError('no frame header at offset %d' % off)
+    if w * h > MAX_PIXELS:          # forged sizes in a foreign file: refuse before allocating
+        raise ValueError(f'frame {w}x{h} at offset {off} is larger than {MAX_PIXELS} pixels')
     size, e20, e24, asz, esz = struct.unpack_from('<5I', d, off + 16)
     return FrameHeader(bpp, hx, hy, w, h, flags, size, e20, e24, asz, esz)
 
@@ -98,7 +105,7 @@ def decode_rle(blk: bytes, table, w: int, h: int, bytes_per_value: int):
                 n = c & 0x7f
             x += n
         if x != w:
-            raise ValueError(f'RLE-Zeile {y}: {x} statt {w} Pixel')
+            raise ValueError(f'RLE row {y}: {x} instead of {w} pixels')
     return vals, opaque
 
 

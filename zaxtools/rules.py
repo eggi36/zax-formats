@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import textformat as tf
+from . import safepath, textformat as tf
 from .datasource import DataSource
 
 RULES = 'Rules.txt'
@@ -64,7 +64,7 @@ def save(rules: RulesFile, out_dir: Path) -> Path:
     """Write into the output folder (Latin-1, CRLF through textformat)."""
     p = Path(out_dir) / RULES
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_bytes(rules.to_bytes())
+    safepath.atomic_write(p, rules.to_bytes())
     return p
 
 

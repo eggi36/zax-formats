@@ -21,6 +21,11 @@ import zipfile
 from pathlib import Path
 
 
+# the largest entry read from a zip (bytes): the largest shipped file (Movies/Intro.bik) has about 29 MB; a deflate
+# bomb in a foreign pack is refused before it is unpacked into memory
+MAX_ENTRY = 256 << 20
+
+
 class DataSource:
     def __init__(self, root: str | os.PathLike, language_pack: str | os.PathLike | None = None):
         """``root``: the folder ``Data`` or the file ``Data.dat``/``Data.zip``.
@@ -31,13 +36,15 @@ class DataSource:
         self.language_pack = Path(language_pack) if language_pack else None
         self._pack = None
         self._pack_index: dict[str, str] = {}
+        self._pack_prefix = ''
+        self._data_prefix = ''
         if self.root.is_file():
-            self._zip = zipfile.ZipFile(_ZipSignatureFile(self.root))
+            self._zip = _open_zip(self.root)
             names = [n for n in self._zip.namelist() if not n.endswith('/')]
-            prefix = _common_data_prefix(names)
+            prefix = self._data_prefix = _common_data_prefix(names)
             for n in names:
-                if n.lower().startswith(prefix):
-                    self._index[n[len(prefix):].lower()] = n
+                if _key(n).startswith(prefix):
+                    self._index[_key(n)[len(prefix):]] = n
         elif self.root.is_dir():
             for dirpath, _, files in os.walk(self.root):
                 for f in files:
@@ -47,12 +54,29 @@ class DataSource:
         else:
             raise FileNotFoundError(f'game data not found: {self.root}')
         if self.language_pack is not None:
-            self._pack = zipfile.ZipFile(_ZipSignatureFile(self.language_pack))
+            try:
+                self._pack = _open_zip(self.language_pack)
+            except BaseException:
+                self.close()
+                raise
             names = [n for n in self._pack.namelist() if not n.endswith('/')]
-            prefix = _common_data_prefix(names)
+            prefix = self._pack_prefix = _common_data_prefix(names)
             for n in names:
-                if n.lower().startswith(prefix):
-                    self._pack_index[n[len(prefix):].lower()] = n
+                if _key(n).startswith(prefix):
+                    self._pack_index[_key(n)[len(prefix):]] = n
+
+    def close(self) -> None:
+        """Close the zip files (Data.dat, the language pack); the source cannot read from them afterwards."""
+        for z in (self._zip, self._pack):
+            if z is not None:
+                z.close()
+                z.fp_owner.close()
+
+    def __enter__(self) -> 'DataSource':
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
 
     @staticmethod
     def check_language_pack(path: str | os.PathLike) -> int:
@@ -80,12 +104,12 @@ class DataSource:
 
     def read(self, rel: str) -> bytes:
         if self.in_pack(rel):
-            return self._pack.read(self._pack_index[_key(rel)])
+            return _read_entry(self._pack, self._pack_index[_key(rel)])
         name = self.resolve(rel)
         if name is None:
             raise FileNotFoundError(rel)
         if self._zip is not None:
-            return self._zip.read(name)
+            return _read_entry(self._zip, name)
         return Path(name).read_bytes()
 
     def size(self, rel: str) -> int:
@@ -108,13 +132,12 @@ class DataSource:
                 out[low] = self._original_rel(name)
         for low, name in self._pack_index.items():
             if low.startswith(p) and low.endswith(s) and low not in out:
-                out[low] = name[len(_common_data_prefix([name])):]
+                out[low] = name.replace('\\', '/')[len(self._pack_prefix):]
         return sorted(out.values())
 
     def _original_rel(self, name: str) -> str:
         if self._zip is not None:
-            prefix = _common_data_prefix([name])
-            return name[len(prefix):] if name.lower().startswith(prefix) else name
+            return name.replace('\\', '/')[len(self._data_prefix):]
         return Path(name).relative_to(self.root).as_posix()
 
 
@@ -167,12 +190,30 @@ class _ZipSignatureFile:
         self._f.close()
 
 
+def _open_zip(path: Path) -> zipfile.ZipFile:
+    f = _ZipSignatureFile(path)
+    try:
+        z = zipfile.ZipFile(f)
+    except BaseException:
+        f.close()
+        raise
+    z.fp_owner = f              # ZipFile does not close a file object it was given: close() does
+    return z
+
+
+def _read_entry(z: zipfile.ZipFile, name: str) -> bytes:
+    info = z.getinfo(name)
+    if info.file_size > MAX_ENTRY:
+        raise ValueError(f'{name}: {info.file_size} bytes unpacked, more than the limit of {MAX_ENTRY}')
+    return z.read(info)
+
+
 def _key(rel: str) -> str:
     return rel.replace('\\', '/').lstrip('/').lower()
 
 
 def _common_data_prefix(names: list[str]) -> str:
     """Zip entries usually start with ``Data/``; this prefix is removed."""
-    if names and all(n.lower().startswith('data/') for n in names[:50]):
+    if names and all(_key(n).startswith('data/') for n in names[:50]):
         return 'data/'
     return ''
