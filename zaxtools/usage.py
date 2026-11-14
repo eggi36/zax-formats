@@ -156,8 +156,12 @@ KNOWN_MISSING = [
     ('Cache/Interface/Mute.frm16', 'frame',
      ['Zax.exe: the sound dialog\'s mute check boxes load the image "Interface"/"Mute" (ui_settings.cpp new_check -> '
       'Button::LoadImage 0x40ff50)'],
-     'only the 8-bit Cache/Interface/Mute.frm exists; the Chinese language pack 0Chinese.RED adds Mute.frm16. What the '
-     '16-bit game shows without it was not tested', 'confirmed (data); effect: assumption', ('Cache/Interface/Mute.frm16',)),
+     'only the 8-bit Cache/Interface/Mute.frm exists; the French and Chinese language packs (0French.RED, 0Chinese.RED) '
+     'add Mute.frm16 (the same 630 bytes). Without it the 16-bit game draws the three mute boxes of Options -> Sound as '
+     'plain check boxes with the word "Mute" (no image); with it they show the speaker image as in 8 bit (VM x86, '
+     'original Zax.exe 1308, 800x600x16, runs 20261114-083931-6dfa without, 20261114-083937-ba9c with the private fix '
+     'pack DataFixes.RED, which adds this file)', 'confirmed (data); effect: verified (VM)',
+     ('Cache/Interface/Mute.frm16',)),
     ('Interface/Splash Screen 2.bmp', 'other', ['Zax.exe: App_LoadGameData 0x5a01c0 (string 0x624e1c)'],
      'the first splash screen of the loading sequence; Splash Screen 3.bmp exists (docs/FORMATS.md 5.2)', 'confirmed',
      ('Interface/Splash Screen 2.bmp',)),
