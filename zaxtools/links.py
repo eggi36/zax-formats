@@ -215,17 +215,13 @@ def dialog_refs(part: LevelPart) -> list[tuple[str, str]]:
 
 
 def parse_rds(data: bytes) -> dict[str, list[str]]:
-    """Label -> speaker lines. Blocks: ``:label`` and lines up to the blank line."""
+    """Label (lower case) -> lines of its text as the game reads the script (``rds.Script.game_items``: blank lines
+    and ``//`` comments as the game treats them, the first of two labels of the same name wins, lines end only at
+    CR/LF)."""
+    from .rds import loads
     out: dict[str, list[str]] = {}
-    cur = None
-    for line in data.decode('latin-1').splitlines():
-        if line.startswith(':'):
-            cur = line[1:]
-            out[cur] = []
-        elif not line.strip():
-            cur = None
-        elif cur is not None:
-            out[cur].append(line)
+    for name, text in loads(data).game_items()[1:]:
+        out.setdefault(name.lower(), text.split('\n') if text else [])
     return out
 
 
@@ -255,4 +251,4 @@ class DialogScripts:
     def lines(self, script: str, line: str) -> list[str] | None:
         """Speaker lines for the label or None (file or label missing)."""
         s = self.script(script)
-        return None if s is None else s.get(line)
+        return None if s is None else s.get(line.lower())

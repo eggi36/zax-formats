@@ -323,20 +323,19 @@ class Usage:
         data = {'version': VERSION, 'signature': self.signature,
                 'assets': [asdict(a) for a in self.assets.values()],
                 'missing': [asdict(m) for m in self.missing], 'placed': sorted(self.placed)}
-        tmp = file.with_suffix('.tmp')
-        tmp.write_text(json.dumps(data), encoding='utf-8')
-        tmp.replace(file)
+        from .safepath import atomic_write
+        atomic_write(file, json.dumps(data).encode('utf-8'))       # a unique temporary name per writer
 
     @classmethod
     def load(cls, file: Path, sig: str | None = None) -> 'Usage | None':
         try:
             data = json.loads(Path(file).read_text(encoding='utf-8'))
-        except (OSError, ValueError):
+            if data.get('version') != VERSION or (sig is not None and data.get('signature') != sig):
+                return None
+            return cls({a['id']: Asset(**a) for a in data['assets']}, [Missing(**m) for m in data['missing']],
+                       set(data['placed']), data['signature'])
+        except Exception:           # noqa: BLE001 - a damaged cache (missing key, wrong field) is built anew
             return None
-        if data.get('version') != VERSION or (sig is not None and data.get('signature') != sig):
-            return None
-        return cls({a['id']: Asset(**a) for a in data['assets']}, [Missing(**m) for m in data['missing']],
-                   set(data['placed']), data['signature'])
 
     @classmethod
     def open(cls, ds: DataSource, exe: str | Path, cache_dir: Path, schema=None) -> 'Usage':

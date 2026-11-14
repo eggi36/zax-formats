@@ -66,11 +66,15 @@ def loads(data: bytes) -> WayMap:
     for _ in range(n):
         g0, g1, u0, u1, x, y, k = struct.unpack_from('<ffiiiii', data, off)
         off += 28
+        if k < 0:
+            raise ValueError(f'.way: way point at offset {off - 28} has {k} edges')
         edges = list(struct.unpack_from('<%di' % k, data, off))
         off += 4 * k
         nodes.append(WayNode(x, y, edges, (u0, u1)))
     m = struct.unpack_from('<i', data, off)[0]
     off += 4
+    if m < 0:
+        raise ValueError(f'.way: {m} edges')
     edges = []
     for _ in range(m):
         g0, g1, u0, u1, u2, ln, ang, a, b = struct.unpack_from('<ffiiiffii', data, off)
@@ -106,6 +110,9 @@ def check(w: WayMap) -> list[str]:
     for i, e in enumerate(w.edges):
         inc.setdefault(e.a, set()).add(i)
         inc.setdefault(e.b, set()).add(i)
+        if not (0 <= e.a < len(w.nodes) and 0 <= e.b < len(w.nodes)):
+            probs.append(f'edge {i}: way point {e.a} or {e.b} does not exist')
+            continue
         if e.a != e.b:
             na, nb = w.nodes[e.a], w.nodes[e.b]
             ln, _ = edge_geometry(nb.x, nb.y, na.x, na.y)

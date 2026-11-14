@@ -24,10 +24,11 @@ from __future__ import annotations
 import math
 import re
 import struct
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import children as ch, mdl, rds, textformat as tf, transition
+from . import children as ch, mdl, rds, safepath, textformat as tf, transition
 from .datasource import DataSource
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .level import Level, LevelPart
@@ -68,6 +69,7 @@ CHECKS = {
     'color-value': ('warning', QT_TRANSLATE_NOOP('levelcheck', 'Colour without three numbers')),
     'unresolved-reference': ('warning', QT_TRANSLATE_NOOP('levelcheck', 'Name not in the level')),
     'pickup-no-default-item': ('warning', QT_TRANSLATE_NOOP('levelcheck', 'Item without Default Inventory Item')),
+    'map-name-path': ('warning', QT_TRANSLATE_NOOP('levelcheck', 'Level name leaves the data folder')),
     'map-name-backslash': ('warning', QT_TRANSLATE_NOOP('levelcheck', 'Backslash in the level name')),
     'turret-ai': ('warning', QT_TRANSLATE_NOOP('levelcheck', 'Obsolete CTurretAI')),
     'old-bad-patrol-ai': ('warning', QT_TRANSLATE_NOOP('levelcheck', 'Obsolete COldBadPatrolAI')),
@@ -208,6 +210,9 @@ class Context:
         self._way: tuple[bytes, object] | None = None
         self._way_models: dict[str, object] = {}
         self._levels: set[str] | None = None
+        # model_head/way_model may run in a worker thread (the editor's way point network) while the GUI thread
+        # checks the level: the lazily built decoder and the caches are filled under this lock
+        self._lock = threading.RLock()
 
     @property
     def skipped(self) -> list[str]:
@@ -295,6 +300,10 @@ class Context:
         if self.schema is None:
             return None
         key = path.lower()
+        with self._lock:
+            return self._model_head(path, key)
+
+    def _model_head(self, path: str, key: str):
         if key not in self._heads:
             from .modelhead import DecodeError, ModelHead
             if self._head_decoder is None:
@@ -310,6 +319,10 @@ class Context:
         """``waymap.ModelData`` of a model: the bounds polygon and, with the schema, the activity."""
         from . import waymap
         key = path.lower()
+        with self._lock:
+            return self._way_model(path, key, waymap)
+
+    def _way_model(self, path: str, key: str, waymap):
         if key not in self._way_models:
             rel = f'Cache/Models/{path}.mdl16'
             if not self._exists(rel):
@@ -498,6 +511,14 @@ def _walk_header(level: Level, ctx: Context, add) -> None:
         add('map-name-backslash', translate('levelcheck', 'The level name contains “\\”: the game requires slashes '
                                                           '“/” ("Map Name *MAY NOT* contain backslashes").'),
             'zax-decomp/docs/EXE_FINDINGS.md, "Other useful messages" (Map paths)',
+            None, 'Partial File Name', name)
+    why = safepath.relative_problem(name.replace('\\', '/')) if name else None
+    if why is not None:
+        add('map-name-path', translate('levelcheck', 'The level name “{name}” is no path below Levels/ ({why}): the '
+                                                     'game would look for the level\'s mini map outside its data, '
+                                                     'and the editor does not write the mini map or Rules.txt for '
+                                                     'it.').format(name=name, why=why),
+            'zaxtools/safepath.py; FORMATS.md, mini maps (Cache/Levels/<Partial File Name>.frm16)',
             None, 'Partial File Name', name)
 
 

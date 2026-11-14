@@ -87,6 +87,8 @@ zaxtools/          library (numpy + Pillow only)
                    additions to exe texts and notes on 46 wrong or incomplete exe texts, derived
                    from zax-decomp/reimpl/src (evidence level + consumer addresses per field)
   i18n.py          translation hook for texts zaxtools makes for a UI (English; the editor installs Qt's translate)
+  safepath.py      guards for writing: names from levels/scripts as safe relative paths, game files of any edition
+                   read-only, atomic writes (temporary file + os.replace)
   levelcheck.py    level check: findings (severity, object, field, explanation, source) for what makes the game
                    end/hang (zax-decomp/docs/ORIGINAL_BUGS.md group 2) and what has no effect in the game
   header.py        level header (CLayerSaveData) for the settings view: groups, hidden/read-only fields, fields

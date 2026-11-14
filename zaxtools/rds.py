@@ -133,6 +133,7 @@ class Script:
         check_name(name)
         if self.find(name) is not None:
             raise ValueError(f'label exists: {name}')
+        body = [Line(t) for t in _text_lines(text)] + [Line('')]
         if self.items:
             prev = self.items[-1]
             tail = prev.body[-1] if prev.body else None
@@ -145,7 +146,7 @@ class Script:
                 prev.body.append(Line(''))          # blank line between the items
         elif self.preamble and self.preamble[-1].end == '':
             self.preamble[-1].end = EOL
-        it =Item(name, EOL, [Line(t) for t in _text_lines(text)] + [Line('')])
+        it = Item(name, EOL, body)
         self.items.append(it)
         return it
 
@@ -174,10 +175,25 @@ def check_name(name: str) -> None:
         raise ValueError('label too long')
 
 
-def _text_lines(text: str) -> list[str]:
-    """Text (``\\n`` between lines) -> file lines; trailing blank lines dropped (the game trims them)."""
+def structure_lines(text: str) -> list[str]:
+    """The lines of an item's text the game would not read as text: a line starting with ``:`` starts a new item, a
+    line starting with ``//`` is skipped (PropertyList_Load, module text). The format has no escape for them; a
+    space in front keeps such a line as text (the game shows the space)."""
+    return [t for t in _split(text) if t.startswith((':', '//'))]
+
+
+def _split(text: str) -> list[str]:
     text = text.replace('\r\n', '\n').replace('\r', '\n').rstrip(_WS)
     return text.split('\n') if text else []
+
+
+def _text_lines(text: str) -> list[str]:
+    """Text (``\\n`` between lines) -> file lines; trailing blank lines dropped (the game trims them). ValueError for
+    a line the game would read as a label or a comment (``structure_lines``): it would change the script."""
+    bad = structure_lines(text)
+    if bad:
+        raise ValueError(f'a text line starts with ":" or "//" (the game reads it as a label or a comment): {bad[0]!r}')
+    return _split(text)
 
 
 def _lines(data: bytes):
@@ -280,7 +296,7 @@ def find_file(root: Path, rel: str) -> Path | None:
     """``root/rel`` with the path compared without case (as the game on Windows), or None."""
     p = Path(root)
     for part in rel.split('/'):
-        if not p.is_dir():
+        if part in ('', '.', '..') or not p.is_dir():      # never leaves root (a Script= of a foreign level)
             return None
         q = p / part
         if not q.exists():

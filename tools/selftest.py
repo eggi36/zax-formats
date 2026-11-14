@@ -603,6 +603,10 @@ def main():
     # 8f. The game's use of the assets (zaxtools/usage.py) and the transitions to missing levels
     _check_usage(ds, report, exe, quick)
 
+    # 8g. Untrusted names and files: paths derived from a level stay below their folder, the game's files are found
+    # as read-only, atomic writes, dialogue text lines that would change the script, forged frame/zip/.way sizes
+    _check_safety(ds, report, sample)
+
     # 9. UI translations: the editor's, since the split of 2026-11-07 in zax-editor/tools/selftest_ui.py
 
     print(f'\nDone in {time.time() - t0:.0f} s, {failures} failures.')
@@ -1376,6 +1380,130 @@ def _check_preview(ds, report, sample, exe):
                 cover |= blk[1]
         ok += bool(((f.rgba[..., 3] > 0) == cover).all())
     report('Viewer: an 8-bit frame shows the pixels of all five blocks', ok, total)
+
+
+def _check_safety(ds, report, sample):
+    import io
+    import tempfile
+    import zipfile
+    from zaxtools import imageimport, levelcheck as lc, safepath
+    # every name of the shipped levels is a safe relative path: their Partial File Name and Script= values
+    names = []
+    for f in sample(ds.list('Levels/', '.zax')):
+        lv = Level.from_bytes(ds.read(f))
+        names.append(lv.partial_file_name)
+        names += [s for p in lv.parts for s, _l in links.dialog_refs(p)]
+    bad = [n for n in names if safepath.relative_problem(n) is not None]
+    report('Safety: names of the shipped levels and scripts are safe relative paths', len(names) - len(bad),
+           len(names), bad[:3] or '')
+    unsafe = ['../../x/y', '/abs/path', 'C:/x', 'C:x', '..', 'a/../b', 'a//b', '', ' ', 'a\\..\\b', 'a/./b', 'x\0y',
+              '\\server\\share']
+    checks = [all(safepath.relative_problem(n) is not None for n in unsafe),
+              safepath.relative_problem('ACT 1/M1M2/01 Main') is None]
+    nl = newlevel.new_level('Test/New', 3000, 2500, ['11 Dirt', '13 Rock'], ground=1)
+    nl.root.set('Partial File Name', '../../../escape')
+    found = [x.check for x in lc.check(nl, lc.Context(ds))]
+    checks += [minimap.name_problem(nl) is not None, 'map-name-path' in found]
+    nl.root.set('Partial File Name', 'Test/New')
+    checks += [minimap.name_problem(nl) is None,
+               'map-name-path' not in [x.check for x in lc.check(nl, lc.Context(ds))]]
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        game = t / 'Some Edition'
+        (game / 'Data' / 'Levels').mkdir(parents=True)
+        (game / 'ZAX.EXE').write_bytes(b'')
+        pack = t / 'Pack Only'
+        pack.mkdir()
+        (pack / 'German.red').write_bytes(b'')
+        own = t / 'own' / 'Levels'
+        own.mkdir(parents=True)
+        cfg = t / 'configured'
+        cfg.mkdir()
+        checks += [safepath.is_game_data(game / 'Data' / 'Levels' / 'x.zax'), safepath.is_game_data(game),
+                   safepath.is_game_data(pack / 'a.zax'), not safepath.is_game_data(own / 'x.zax'),
+                   safepath.is_game_data(cfg / 'x.zax', [cfg])]
+        try:
+            safepath.join_inside(t / 'own', '../escape')
+            checks.append(False)
+        except ValueError:
+            checks.append(True)
+        (t / 'own' / 'link').symlink_to(t)
+        try:
+            safepath.join_inside(t / 'own', 'link/escape.zax')      # a link out of the folder
+            checks.append(False)
+        except ValueError:
+            checks.append(True)
+        target = own / 'x.zax'
+        target.write_bytes(b'old')
+        os.chmod(target, 0o640)
+        safepath.atomic_write(target, b'new')
+        checks += [target.read_bytes() == b'new', (target.stat().st_mode & 0o777) == 0o640,
+                   sorted(p.name for p in own.iterdir()) == ['x.zax']]
+        checks.append(rds.find_file(t / 'own', '../own/Levels/x.zax') is None)
+        try:
+            imageimport.write({'../escape.frm16': b''}, t / 'own')
+            checks.append(False)
+        except ValueError:
+            checks.append(not (t / 'escape.frm16').exists())
+        spec = imageimport.ImportSpec('image', 'x', 'C:/Textures', [np.zeros((4, 4, 4), np.uint8)])
+        checks.append(bool(imageimport.check(spec)))
+        # a zip entry above the limit is refused before it is unpacked; close() closes the files
+        z = t / 'bomb.zip'
+        with zipfile.ZipFile(z, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('Data/Levels/a.txt', b'x')
+            zf.writestr('Data\\Levels\\b.txt', b'y')
+        from zaxtools import datasource as dsm
+        limit, dsm.MAX_ENTRY = dsm.MAX_ENTRY, 0
+        try:
+            with DataSource(z) as zs:
+                try:
+                    zs.read('Levels/a.txt')
+                    checks.append(False)
+                except ValueError:
+                    checks.append(True)
+        finally:
+            dsm.MAX_ENTRY = limit
+        with DataSource(z) as zs:
+            checks += [zs.read('Levels/a.txt') == b'x', zs.read('Levels/b.txt') == b'y']
+        checks.append(zs._zip.fp is None)
+    # dialogue text lines the game would read as a label or a comment are refused, nothing changes
+    sc = rds.loads(b':One\r\nZax: hi\r\n\r\n')
+    before = sc.dumps()
+    for text in ('Zax: a\n:Valeth leaves', '// note', 'x\r//y'):
+        try:
+            sc.set_text('One', text)
+            checks.append(False)
+        except ValueError:
+            checks.append(sc.dumps() == before)
+        try:
+            sc.add('Two', text)
+            checks.append(False)
+        except ValueError:
+            checks.append(sc.dumps() == before)
+    sc.set_text('One', 'Zax: a\n :Valeth leaves')
+    checks += [rds.loads(sc.dumps()).game_items()[1] == ('One', 'Zax: a\n :Valeth leaves'),
+               rds.structure_lines('a\n:b\n//c\n d') == [':b', '//c']]
+    # the properties' dialogue text as the game reads it: first of two labels wins, any case, blank lines kept
+    parsed = links.parse_rds(b':A\r\nZax: one\r\n\r\ntwo\r\n// c\r\n:a\r\nother\r\n')
+    checks.append(parsed == {'a': ['Zax: one', '', 'two']})
+    # forged sizes: a 65535 x 65535 frame, a negative edge count, an edge to a missing way point
+    hd = struct.pack('<BBhhHHHHH', 0x31, 16, 0, 0, 0xffff, 0xffff, 0, 0, 0) + bytes(20)
+    try:
+        frm.read_header(hd)
+        checks.append(False)
+    except ValueError:
+        checks.append(True)
+    w = way.WayMap(0, 0, [way.WayNode(0, 0, [0], (0, 0))], [way.WayEdge(0, 5, 1.0, 0.0, (0, 0, 0))])
+    checks.append(bool(way.check(w)))
+    bad_way = bytearray(way.dumps(way.WayMap(0, 0, [way.WayNode(0, 0, [], (0, 0))], [])))
+    struct.pack_into('<i', bad_way, 24 + 24, -1)
+    try:
+        way.loads(bytes(bad_way))
+        checks.append(False)
+    except ValueError:
+        checks.append(True)
+    report('Safety: unsafe names refused, game files found, atomic writes, dialogue lines, forged sizes',
+           sum(checks), len(checks), [i for i, c in enumerate(checks) if not c][:5] or '')
 
 
 def _check_rds(ds, zaxs, report, what):

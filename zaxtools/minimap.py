@@ -20,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image, ImageFilter
 
-from . import frm
+from . import frm, safepath
 from .level import Level
 from .render import Assets, render_level
 
@@ -137,6 +137,13 @@ def minimap_frm16(level: Level, assets: Assets) -> bytes:
 def minimap_path(level: Level) -> str:
     """Path relative to Data/: ``Cache/Levels/<Partial File Name>.frm16``."""
     return f'Cache/Levels/{level.partial_file_name}.frm16'
+
+
+def name_problem(level: Level) -> str | None:
+    """Why the level's ``Partial File Name`` cannot name its mini map files below Data/ (an absolute path, ``..``,
+    a drive letter: ``safepath.relative_problem``; the level comes from anyone), or None. A writer of the paths of
+    ``minimap_path``, ``game_files`` and ``placeholder_files`` must check it first."""
+    return safepath.relative_problem(level.partial_file_name)
 
 
 # --- Let the game draw the mini map --------------------------------------------------------------

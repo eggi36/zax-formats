@@ -24,7 +24,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from . import mdl
+from . import mdl, safepath
 from . import textformat as tf
 from .datasource import DataSource
 from .i18n import translate
@@ -229,20 +229,18 @@ class Catalog:
         file.parent.mkdir(parents=True, exist_ok=True)
         data = {'version': VERSION, 'signature': self.signature,
                 'models': [asdict(m) for m in self.models.values()]}
-        tmp = file.with_suffix('.tmp')
-        tmp.write_text(json.dumps(data), encoding='utf-8')
-        tmp.replace(file)
+        safepath.atomic_write(file, json.dumps(data).encode('utf-8'))     # a unique temporary name per writer
 
     @classmethod
     def load(cls, file: Path, sig: str | None = None) -> 'Catalog | None':
         """Load the saved catalogue; None if missing, outdated or a different version."""
         try:
             data = json.loads(file.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
+            if data.get('version') != VERSION or (sig is not None and data.get('signature') != sig):
+                return None
+            return cls({m['path']: ModelInfo(**m) for m in data['models']}, data['signature'])
+        except Exception:           # noqa: BLE001 - a damaged cache (missing key, wrong field) is built anew
             return None
-        if data.get('version') != VERSION or (sig is not None and data.get('signature') != sig):
-            return None
-        return cls({m['path']: ModelInfo(**m) for m in data['models']}, data['signature'])
 
     @classmethod
     def cached(cls, ds: DataSource, cache_dir: Path, exe: str | Path | None = None) -> 'Catalog | None':
