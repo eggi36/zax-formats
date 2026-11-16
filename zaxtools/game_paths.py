@@ -57,6 +57,8 @@ BUILDS = {
     '1314': ('09a10b67211b46222519c850dfb6fd1e662f894a', 'build 1314, Chinese Simplified', None),
     'demo-0719': ('ca98a54cacde9496930f30cf00f37f0b8fa6c259', 'build 950, demo 2001-07-19', None),
     'demo-0701': ('deb4bf00231dade7b03ab3234b78b3a508b1d398', 'build 890, demo 2001-07-01', None),
+    'demo-0601': ('2e536cbbc2b3ea1371fe7bea65eea7b46b56aef0', 'demo 2001-06-01, the oldest build (no build number)',
+                  None),
 }
 REFERENCE = '1308'
 PATHS_FILE = 'paths.json'
