@@ -73,6 +73,94 @@ def read_header(d: bytes, off: int = 0) -> FrameHeader:
     return FrameHeader(bpp, hx, hy, w, h, flags, size, e20, e24, asz, esz)
 
 
+# An older frame type (0x25) of an early serialisation (objects with the signature float 25.0 instead
+# of 27.0). Only seen in the 2001-06-01 demo's "Test Enumerate/Cache/Models/.../*.mdl" (one placeholder
+# "!Unknown Model" under four names); every other frame of that demo is already 0x31.
+# [verified 2026-11-16: the frame decodes to exactly 140 x 131 and its rows end 4 bytes before the block
+# size (the size counts itself); the image matches the 0x31 frame of the demo's own "!Unknown Model.mdl"
+# apart from a few pixels.]
+#   +0  u8  0x25          type signature
+#   +1  u8  bits/pixel    (8; 16 never seen)
+#   +2  u16 unknown
+#   +4  i16 hot spot x
+#   +6  i16 hot spot y
+#   +8  u16 width
+#   +10 u16 height
+#   +12 22 bytes not decoded (+14 f32 16.0)
+#   +34 u32 size of the edge block (0: none)
+#   +38 the pixel block: u32 its size including this field, then the rows
+# A row: u8 transparent pixels, u8 count, count values, u8 transparent pixels (0 at the row's end),
+# ... until the row's width is reached. After the block a row table (height x u32, offsets into the block, the first 4).
+# Then the edge block in the same layout, but two bytes per value: alpha, palette index (soft edges
+# and the shadow), and its row table.
+OLD_TYPE = 0x25
+OLD_HEADER = 42
+
+
+def read_old_header(d: bytes, off: int = 0) -> FrameHeader:
+    t, bpp, _, hx, hy, w, h = struct.unpack_from('<BBHhhHH', d, off)
+    if t != OLD_TYPE:
+        raise ValueError('no old frame header at offset %d' % off)
+    if w * h > MAX_PIXELS:
+        raise ValueError(f'frame {w}x{h} at offset {off} is larger than {MAX_PIXELS} pixels')
+    size = struct.unpack_from('<I', d, off + 38)[0]
+    return FrameHeader(bpp, hx, hy, w, h, 0, size, 0, 0, 0, 0)
+
+
+def decode_old(d: bytes, off: int = 0, palette: np.ndarray | None = None):
+    """Decode an old frame (type 0x25, see OLD_TYPE) -> (RGBA image, FrameHeader, end offset)."""
+    hd = read_old_header(d, off)
+    if hd.bpp != 8:
+        raise ValueError(f'old frame with {hd.bpp} bits per pixel at offset {off}')
+    if palette is None:
+        raise ValueError('8-bit frame needs a palette')
+    w, h = hd.width, hd.height
+    rgba = np.zeros((h, w, 4), np.uint8)
+    vals, alpha, end = _old_rows(d, off + 38, w, h, 1)
+    edge_size = struct.unpack_from('<I', d, off + 34)[0]
+    if edge_size:
+        if struct.unpack_from('<I', d, end)[0] != edge_size:
+            raise ValueError(f'old frame at offset {off}: edge block size does not match')
+        evals, ealpha, end = _old_rows(d, end, w, h, 2)
+        edge = ealpha > 0
+        vals[edge], alpha[edge] = evals[edge], ealpha[edge]
+    rgba[..., :3] = _to_rgb(vals, 1, palette)
+    rgba[..., 3] = alpha
+    return rgba, hd, end
+
+
+def _old_rows(d: bytes, start: int, w: int, h: int, bpv: int):
+    """One block of an old frame at ``start`` (u32 size, rows, row table) -> (palette indices, alpha,
+    end). ``bpv`` 1: opaque indices; 2: (alpha, index) pairs."""
+    size = struct.unpack_from('<I', d, start)[0]
+    vals = np.zeros((h, w), np.uint8)
+    alpha = np.zeros((h, w), np.uint8)
+    p, end = start + 4, start + size
+    for y in range(h):
+        x = 0
+        while True:
+            x += d[p]
+            p += 1
+            if x >= w:
+                break
+            n = d[p]
+            p += 1
+            if x + n > w:
+                raise ValueError(f'old frame row {y}: {x + n} instead of {w} pixels')
+            v = np.frombuffer(d[p:p + n * bpv], np.uint8)
+            if bpv == 1:
+                vals[y, x:x + n], alpha[y, x:x + n] = v, 255
+            else:
+                alpha[y, x:x + n], vals[y, x:x + n] = v[0::2], v[1::2]
+            p += n * bpv
+            x += n          # a skip byte always follows, 0 when the values reach the row's end
+        if x != w or p > end:
+            raise ValueError(f'old frame row {y}: {x} instead of {w} pixels')
+    if p != end:
+        raise ValueError(f'old frame block at {start}: rows end at {p}, block at {end}')
+    return vals, alpha, end + 4 * h
+
+
 def rgb565_to_rgb(a: np.ndarray) -> np.ndarray:
     a = a.astype(np.uint32)
     return np.dstack([(a >> 11 & 31) * 255 // 31,
@@ -115,8 +203,10 @@ def decode(d: bytes, off: int = 0, palette: np.ndarray | None = None):
     Returns: (RGBA image (h,w,4) uint8, FrameHeader, end offset).
     8-bit frames need ``palette`` (256x3 RGB).
     Alpha/edge layers (16 bit) are applied as well; an 8-bit RLE frame's five blocks as the 256-colour
-    mode's opacity steps (``_decode_rle8``).
+    mode's opacity steps (``_decode_rle8``). Old frames (type 0x25, OLD_TYPE) go to ``decode_old``.
     """
+    if d[off] == OLD_TYPE:
+        return decode_old(d, off, palette)
     hd = read_header(d, off)
     w, h, bpv = hd.width, hd.height, hd.bpp // 8
     if hd.rle and bpv == 1:

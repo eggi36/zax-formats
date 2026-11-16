@@ -390,6 +390,23 @@ Then one byte per character: `01` + frame (RLE, section 5) or `00`. The image wi
 
 All 24 fonts read up to the last byte in 8 and 16 bit; both versions have the same characters in the same sizes [verified 2026-10-20]. Text assembled character by character gives exactly the game's lettering in the dialog "Select Map": the game's windows use `Gold Editor` [verified on a screenshot]. HUD: hit points `Number Red`, game time `Number Grn` (by appearance). Implementation: `zaxtools/font.py` (`load`, `Font.render`).
 
+### 5.4 The old frame type 0x25 (demo 2001-06-01)
+
+One file family of the earliest build has frames of an older type: the four models below `Test Enumerate/Cache/Models/` of the 2001-06-01 demo's `DATA.dat` (`Bill`, `Ted`, `Wall 1`, `Wall 2`, one file: a placeholder "!Unknown Model", 17,154 bytes, SHA-1 `5073d54f…`). Their objects start with float 25.0 instead of 27.0 and the frame follows the text `FRAME`. Every other frame of that demo, its standalone `.frm` files and its other 295 models included, is already type 0x31 [verified 2026-11-16: zaxtools reads all 148 `.frm` and all 299 `.mdl` of that `DATA.dat`].
+
+| Offset | Type | Meaning |
+|---|---|---|
+| +0 | u8 | 0x25 |
+| +1 | u8 | bits per pixel (8) |
+| +2 | u16 | unknown |
+| +4, +6 | i16 | hot spot x, y |
+| +8, +10 | u16 | width, height |
+| +12 | 22 bytes | not decoded (+14: f32 16.0) |
+| +34 | u32 | size of the edge block (0: none) |
+| +38 | u32 | size of the pixel block, counting this field; the block follows |
+
+A row is a list of u8 transparent pixels, u8 count, count values, u8 transparent pixels (0 when the values reach the row's end), … until the width is reached. There is no RLE: the values are single palette indices. A row table (height × u32, offsets into the block, the first one 4) follows the block. Then the edge block comes in the same layout, but each value is two bytes, alpha and palette index (the soft edges and the shadow), followed by its own row table. `zaxtools.frm.decode_old` reads it, and `frm.decode` dispatches to it. `mdl.load` puts the frames of such a model, whose sequences it does not decode, into one still sequence "(old format)" [verified 2026-11-16: the placeholder decodes to 140 × 131 with hot spot (85, 70), both blocks end exactly at their sizes, and the picture equals the 0x31 frame of the same demo's `!Unknown Model.mdl` apart from a few pixels].
+
 ---
 
 ## 6. Models (`.mdl16`, `.mdl`)

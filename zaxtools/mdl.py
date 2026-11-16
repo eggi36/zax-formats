@@ -41,7 +41,8 @@ from . import frm
 
 SEQ_TAG = struct.pack('<ff', 27.0, 758.0)
 TWO_PI = struct.unpack('<f', struct.pack('<f', 2 * math.pi))[0]    # constant of the exe (float)
-_FRAME_RE = re.compile(rb'\x31(\x10|\x08)')
+_FRAME_RE = re.compile(rb'\x31(\x10|\x08)|FRAME\0(?=\x25\x08)')
+OLD_TAG = struct.pack('<f', 25.0)    # objects of the early serialisation (frm.OLD_TYPE)
 
 
 @dataclass
@@ -255,6 +256,14 @@ def read_sequences(d: bytes) -> list[Sequence]:
 
 
 def _try_frame(d: bytes, o: int, palette):
+    if d[o] == frm.OLD_TYPE:
+        if palette is None:
+            return None
+        try:
+            rgba, hd, end = frm.decode_old(d, o, palette)
+        except (ValueError, struct.error, IndexError):
+            return None
+        return Frame(rgba, hd.hot_x, hd.hot_y, o), end
     try:
         hd = frm.read_header(d, o)
     except (ValueError, struct.error):
@@ -278,9 +287,10 @@ def load(data: bytes, name: str = '', palette: np.ndarray | None = None) -> Mode
     frames, ends = [], {}
     pos = 0
     for m in _FRAME_RE.finditer(data):
-        if m.start() < pos:
+        o = m.start() + 6 if m.group(0).startswith(b'FRAME') else m.start()
+        if o < pos:
             continue
-        r = _try_frame(data, m.start(), palette)
+        r = _try_frame(data, o, palette)
         if r:
             frames.append(r[0])
             pos = ends[r[0].offset] = r[1]
@@ -293,6 +303,10 @@ def load(data: bytes, name: str = '', palette: np.ndarray | None = None) -> Mode
         else:
             stop = len(data)
         s.frames, s.exact = _slots(data, s.total, found, [ends[f.offset] for f in found], stop - 8 * s.total)
+    if not seqs and frames and data.startswith(OLD_TAG):
+        # early serialisation (float 25.0, frm.OLD_TYPE): the sequences are not decoded, its frames go
+        # into one still sequence "(old format)" (exact False)
+        seqs = [Sequence('(old format)', len(frames), 0.0, '', 1, len(frames), 0, 0, frames=frames, exact=False)]
     return Model(name, seqs)
 
 
