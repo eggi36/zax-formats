@@ -6,19 +6,22 @@
 # remote's tracking refs), every annotated tag being pushed, and every file those commits add or change:
 #   - commit and tag metadata: author, committer, tagger (name and e-mail) and the message;
 #   - file names (every path a pushed commit adds or changes);
-#   - file contents, text and binary alike (binary files also as UTF-16).
+#   - file contents, text and binary alike (binary files also as UTF-16, little and big endian; a binary file that is
+#     UTF-16 text, by its byte order mark or its zero bytes, is also decoded and checked as a text file).
 # What is refused:
 #   - the private values of zax-testtools' git-ignored vmtest/local.json, read at push time (this file names none of
 #     them): every string of it (4 characters or more; "*" of a glob dropped; an IPv4 address also as its /24 prefix),
-#     the words of "private_words" in any case, the rest as written. Not used: "share_root" (the generic mount folder).
+#     the words of "private_words" and the VM names (below) in any case, the rest as written. Not used: "share_root"
+#     (the generic mount folder).
 #     In zax-redone and zax-testtools (private) the VM names (lan.host, lan.client, lan.client2, macvm.name, exclude)
 #     are allowed in files and messages: their docs and tools work with them. Everything else applies everywhere;
-#   - home folder paths: /Users/<name>/, /home/<name>/, <drive>:\Users\<name> (also with doubled backslashes), except
-#     the made-up names of HOME_ALLOW and below THIRD_PARTY_DIRS;
+#   - home folder paths: /Users/<name>, /home/<name>, <drive>:\Users\<name> (also with doubled backslashes; with or
+#     without a separator after the name; not a name of dots only, "/Users/..."), except the made-up names of HOME_ALLOW
+#     and below THIRD_PARTY_DIRS;
 #   - e-mail addresses: in commit and tag metadata only GitHub's noreply ones (<id>+<name>@users.noreply.github.com,
 #     noreply@anthropic.com); in text files also example.com/.org/.net (RFC 2606), the addresses of MAIL_ALLOW below and
 #     anything below a path of THIRD_PARTY_DIRS (third-party sources with their licence texts). Binary files are not
-#     checked for addresses (random bytes would look like one), only for the words above;
+#     checked for addresses (random bytes would look like one), only for the words above, unless they are UTF-16 text;
 #   - game data: any history touching gamedata/ (or its old name spieldaten/); anywhere, a file named Zax.exe or ending
 #     in .dat .red .zax .way .rds .frm .frm16 .seq .seq16 .mdl .mdl16 .wav .ogg .bik (any case); a binary file that is a
 #     zip (Data.dat and the .RED packs are zips), an exe/dll (MZ), Bink, Ogg or RIFF WAVE; any file over 20 MB.
@@ -88,7 +91,7 @@ with open(local, encoding='utf-8') as f:
 private = [w for w in conf.get('private_words', []) if isinstance(w, str) and len(w) >= 4]
 if not private:
     refuse('no "private_words" in ' + local)
-values = set()
+values, vm_values = set(), set()
 
 
 def walk(o, key):
@@ -99,7 +102,9 @@ def walk(o, key):
         for v in o:
             walk(v, key)
     elif isinstance(o, str) and key != 'private_words' and key not in SKIP_KEYS:
-        if repo in PRIVATE_REPOS and key in VM_NAME_KEYS:
+        if key in VM_NAME_KEYS:
+            if repo not in PRIVATE_REPOS:
+                vm_values.add(o.strip('*?'))
             return
         v = o.strip('*?')
         values.add(v)
@@ -109,22 +114,29 @@ def walk(o, key):
 
 walk(conf, '')
 values = sorted(v for v in values if len(v) >= 4)
+vm_values = sorted(v for v in vm_values if len(v) >= 4)
 
 
 def alternation(words, utf16):
     out = [re.escape(w.encode('utf-8')) for w in words]
     if utf16:
-        out += [re.escape(w.encode('utf-16-le')) for w in words]
+        out += [re.escape(w.encode(enc)) for w in words for enc in ('utf-16-le', 'utf-16-be')]
     return b'|'.join(out) or b'(?!)'
 
 
-HOME = re.compile(br'/(?:Users|home)/([A-Za-z0-9._-]+)/|[A-Za-z]:\\{1,2}Users\\{1,2}([A-Za-z0-9._-]+)')
+# the user name runs to the next character that cannot be part of one (a separator, a quote, a space, the end)
+HOME = re.compile(br'/(?:Users|home)/([A-Za-z0-9._-]+)|[A-Za-z]:\\{1,2}Users\\{1,2}([A-Za-z0-9._-]+)')
 HOME16 = re.compile(br'/\x00(?:U\x00s\x00e\x00r\x00s|h\x00o\x00m\x00e)\x00/\x00[A-Za-z0-9._-]\x00'
-                    br'|[A-Za-z]\x00:\x00\\\x00U\x00s\x00e\x00r\x00s\x00\\\x00')
+                    br'|[A-Za-z]\x00:\x00\\\x00U\x00s\x00e\x00r\x00s\x00\\\x00'
+                    br'|\x00/\x00(?:U\x00s\x00e\x00r\x00s|h\x00o\x00m\x00e)\x00/\x00[A-Za-z0-9._-]'
+                    br'|\x00[A-Za-z]\x00:\x00\\\x00U\x00s\x00e\x00r\x00s\x00\\')
+SETUP = 'a value of the test setup (local.json)'
 TEXT_RES = [(re.compile(alternation(private, False), re.I), 'a private word'),
-            (re.compile(alternation(values, False)), 'a value of the test setup (local.json)')]
+            (re.compile(alternation(vm_values, False), re.I), SETUP),
+            (re.compile(alternation(values, False)), SETUP)]
 BIN_RES = [(re.compile(alternation(private, True), re.I), 'a private word'),
-           (re.compile(alternation(values, True)), 'a value of the test setup (local.json)'),
+           (re.compile(alternation(vm_values, True), re.I), SETUP),
+           (re.compile(alternation(values, True)), SETUP),
            (HOME16, 'a home folder path (UTF-16)')]
 MAIL = re.compile(br'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
 
@@ -139,6 +151,34 @@ def mail_allowed(addr):
             or any(domain == d or domain.endswith('.' + d) for d in ('example.com', 'example.org', 'example.net')))
 
 
+def utf16_text(data):
+    """``data`` as UTF-8 when it is UTF-16 text (a byte order mark, or zero bytes in nearly every other byte and in
+    almost none of the rest, in its first 8000 bytes), else None."""
+    if data[:2] in (b'\xff\xfe', b'\xfe\xff'):
+        enc, body = ('utf-16-le' if data[:2] == b'\xff\xfe' else 'utf-16-be'), data[2:]
+    else:
+        head = data[:8000]
+        n = len(head) // 2
+        if n < 4:
+            return None
+        even, odd = head[0:2 * n:2].count(0), head[1:2 * n:2].count(0)
+        if odd >= 0.6 * n and even <= 0.02 * n:
+            enc = 'utf-16-le'
+        elif even >= 0.6 * n and odd <= 0.02 * n:
+            enc = 'utf-16-be'
+        else:
+            return None
+        body = data
+    return body[:len(body) & ~1].decode(enc, 'replace').encode('utf-8')
+
+
+def home_name(m):
+    """Is the HOME match ``m`` a user's folder: not a made-up name of HOME_ALLOW, not only dots ("/Users/..." in a
+    comment)?"""
+    name = (m.group(1) or m.group(2)).decode()
+    return name not in HOME_ALLOW and name.strip('.') != ''
+
+
 def find(msg):
     if msg not in findings:
         findings.append(msg)
@@ -147,8 +187,7 @@ def find(msg):
 def scan(data, where, binary, third_party=False):
     hits = [(rx.search(data), what) for rx, what in (BIN_RES if binary else TEXT_RES)]
     if not third_party:
-        hits.append((next((m for m in HOME.finditer(data)
-                           if (m.group(1) or m.group(2)).decode() not in HOME_ALLOW), None), 'a home folder path'))
+        hits.append((next((m for m in HOME.finditer(data) if home_name(m)), None), 'a home folder path'))
     for m, what in hits:
         if m:
             line = '' if binary else ':%d' % (data.count(b'\n', 0, m.start()) + 1)
@@ -257,10 +296,14 @@ if blobs:
             find('%s is a zip, exe, Bink, Ogg or WAVE file (game data?)' % where)
         third_party = all(any(p.startswith(d) for d in THIRD_PARTY_DIRS) for p in paths)
         scan(data, where, binary, third_party)
-        if not binary and not third_party:
-            for m in MAIL.finditer(data):
+        text = utf16_text(data) if binary else data
+        if text is not None and binary:
+            where += ' (UTF-16 text)'
+            scan(text, where, False, third_party)
+        if text is not None and not third_party:
+            for m in MAIL.finditer(text):
                 if not mail_allowed(m.group().decode('ascii').lower()):
-                    find('%s:%d names an e-mail address' % (where, data.count(b'\n', 0, m.start()) + 1))
+                    find('%s:%d names an e-mail address' % (where, text.count(b'\n', 0, m.start()) + 1))
                     break
     cat.stdin.close()
     cat.wait()

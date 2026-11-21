@@ -43,6 +43,11 @@ commit() {  # commit <path> <content printf format> [git commit options...]
     p=$1 c=$2; shift 2
     mkdir -p "$(dirname "$p")" && printf "$c" > "$p" && git add -f "$p" && git commit -q "$@"
 }
+commit16() {  # commit16 <path> <UTF-16LE|UTF-16BE> <byte order mark printf format or ''> <text>: a UTF-16 text file
+    p=$1 enc=$2 bom=$3 c=$4
+    mkdir -p "$(dirname "$p")" && { printf "$bom"; printf '%s\n' "$c" | iconv -f UTF-8 -t "$enc"; } > "$p" &&
+        git add -f "$p" && git commit -q -m ok
+}
 
 setup zax-public
 commit a.txt 'fine\n' -m 'Clean change' && run 0 "clean commit"
@@ -65,9 +70,26 @@ commit a.txt 'cd /home/''someone/zax\n' -m ok && run 1 "content: /home path"
 commit a.txt 'C:\\\\Users\\\\''someone\\\\Temp\n' -m ok && run 1 "content: Windows home path (doubled backslashes)"
 commit a.txt 'C:\\Users\\''someone\\Temp\n' -m ok && run 1 "content: Windows home path"
 commit a.txt 'C:\\Users\\Zaxvm\\Temp\n' -m ok && run 0 "content: allowed made-up Windows user"
+commit a.txt 'cd /Users/''someone\n' -m ok && run 1 "content: home path at the line's end (no slash after the name)"
+commit a.txt '{"HOME": "/home/''someone"}\n' -m ok && run 1 "content: home path before a quote"
+commit a.txt 'set C:\\Users\\''someone\n' -m ok && run 1 "content: Windows home path at the line's end"
+commit a.txt 'cd /Users/Zaxvm\n' -m ok && run 0 "content: allowed made-up user (no slash after the name)"
+commit a.txt 'a POSIX folder ("/Users/...") or /home/..\n' -m ok && run 0 "content: a name of dots only is no user"
+commit a.txt 'seen on qvmh-01\n' -m ok && run 1 "content: VM name in another case"
+commit a.txt 'fine\n' -m 'Seen on Qvmx-09' && run 1 "message: excluded VM name in another case"
+commit16 u.txt UTF-16LE '\377\376' "mail somebody""${at}mail.invalid" && run 1 "UTF-16LE text (byte order mark): e-mail address"
+commit16 u.txt UTF-16LE '' "cd /Users/""someone" && run 1 "UTF-16LE text (no byte order mark): home path, no slash after the name"
+commit16 u.txt UTF-16BE '\376\377' "For Quxblorf" && run 1 "UTF-16BE text (byte order mark): private word"
+commit16 u.txt UTF-16BE '' "mail somebody""${at}mail.invalid" && run 1 "UTF-16BE text (no byte order mark): e-mail address"
+commit16 u.txt UTF-16BE '' "on qvmh-01" && run 1 "UTF-16BE text: VM name in another case"
+commit16 u.txt UTF-16LE '\377\376' "mail name${at}example.org, nothing else" && run 0 "UTF-16LE text: clean (example.org)"
+commit16 u.txt UTF-16BE '' "Nothing private here at all" && run 0 "UTF-16BE text: clean"
 commit a.png '\211PNG\000\000xxQUXBLORFxx\000' -m ok && run 1 "binary: private word"
 commit a.png '\211PNG\000\000Q\000u\000x\000b\000l\000o\000r\000f\000' -m ok && run 1 "binary: private word as UTF-16"
 commit a.png '\211PNG\000\000/Users/''someone/\000' -m ok && run 1 "binary: home path"
+commit a.qm '\074\270\144\030\000\000\000Q\000u\000x\000b\000l\000o\000r\000f\001' -m ok && run 1 "binary: private word as UTF-16BE"
+commit a.qm '\074\270\144\030\001\000\000/\000h\000o\000m\000e\000/\000s\000x\001' -m ok && run 1 "binary: home path as UTF-16BE"
+commit a.qm '\074\270\144\030\001\000\000C\000:\000\\\000U\000s\000e\000r\000s\000\\\000s\001' -m ok && run 1 "binary: Windows home path as UTF-16BE"
 commit a.png '\211PNG\000\000plain\000' -m ok && run 0 "binary: clean"
 commit sub/x.RED 'fine\n' -m ok && run 1 "game data: .RED anywhere"
 commit sub/model.mdl16 'fine\n' -m ok && run 1 "game data: .mdl16"
@@ -92,6 +114,7 @@ commit a.txt 'fine\n' -m ok && hookenv="ZAX_LOCAL_JSON=$tmp/nowords.json" run 1 
 # zax-redone and zax-testtools may name the VMs, nothing else
 setup zax-redone
 commit a.txt 'QVMH-01 and QVMC-02\n' -m 'Seen on QVMX-09' && run 0 "private repository: VM names"
+commit a.txt 'qvmh-01 and Qvmc-02\n' -m 'Seen on qvmx-09' && run 0 "private repository: VM names in another case"
 commit a.txt 'QSHR-01\n' -m ok && run 1 "private repository: share prefix"
 commit a.txt 'fine\n' -m 'Quxblorf' && run 1 "private repository: private word"
 

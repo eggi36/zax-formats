@@ -1419,9 +1419,28 @@ def _check_safety(ds, report, sample):
         own.mkdir(parents=True)
         cfg = t / 'configured'
         cfg.mkdir()
+        # E4 (review 2026-11-21): only a game folder counts, not any folder holding a data.dat or a *.RED
+        other = t / 'docs'
+        (other / 'Zax-Editor-Output').mkdir(parents=True)
+        (other / 'data.dat').write_bytes(b'another program')
+        arch = t / 'Unpacked Edition'
+        arch.mkdir()
+        with zipfile.ZipFile(arch / 'DATA.DAT', 'w') as z:
+            z.writestr('Levels/Act 1/x.zax', b'')
+        port = t / 'Port Copy'
+        port.mkdir()
+        (port / 'DATA.dat').write_bytes(b'')
+        (port / 'zax-data.bin').write_bytes(b'')
+        with_pack = t / 'With Pack'
+        with_pack.mkdir()
+        (with_pack / 'Data.dat').write_bytes(b'')
+        (with_pack / 'Polish.RED').write_bytes(b'')
         checks += [safepath.is_game_data(game / 'Data' / 'Levels' / 'x.zax'), safepath.is_game_data(game),
-                   safepath.is_game_data(pack / 'a.zax'), not safepath.is_game_data(own / 'x.zax'),
-                   safepath.is_game_data(cfg / 'x.zax', [cfg])]
+                   not safepath.is_game_data(pack / 'a.zax'), not safepath.is_game_data(own / 'x.zax'),
+                   safepath.is_game_data(cfg / 'x.zax', [cfg]),
+                   not safepath.is_game_data(other / 'Zax-Editor-Output' / 'x.zax'),
+                   safepath.is_game_data(arch / 'Data' / 'x.zax'), safepath.is_game_data(port / 'ScrapBook'),
+                   safepath.is_game_data(with_pack / 'x.zax')]
         try:
             safepath.join_inside(t / 'own', '../escape')
             checks.append(False)

@@ -3,8 +3,8 @@
 * ``relative_problem``: a path that comes from a level or a script (``Partial File Name``, ``Script=``) and that a
   tool joins below a folder must stay below it: no absolute path, no drive letter, no ``..``.
 * ``inside`` / ``join_inside``: a derived path resolved (links followed) must lie inside its root.
-* ``is_game_data``: a file of a game installation of any edition (a folder holding ``Zax.exe``, ``Data.dat`` or a
-  language pack ``*.RED`` above it, or below one of the given roots) is never written.
+* ``is_game_data``: a file of a game installation of any edition (below a game folder, ``marks_game``, or below one of
+  the given roots) is never written.
 * ``atomic_write``: write a temporary file next to the target and replace the target with it, so a crash or a full
   disk never leaves a truncated level, script or Rules.txt.
 """
@@ -13,13 +13,19 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import zipfile
 from pathlib import Path
+
+from .datasource import _open_zip
 
 from .i18n import translate
 
 # names that mark a folder as (part of) a game installation; compared without case, as the game's file system
 GAME_FILES = ('zax.exe', 'data.dat')
 PACK_SUFFIX = '.red'
+PORT_MARKER = 'zax-data.bin'    # zax-redone's imported copy of the game (DATA.dat, the packs, this file; no Zax.exe)
+# entries that only the game's archive holds (the engine's file types; matched without case)
+_GAME_ENTRY = re.compile(r'\.(zax|way|rds|frm|frm16|seq|seq16|mdl16)$', re.I)
 _DRIVE = re.compile(r'^[A-Za-z]:')
 
 
@@ -60,27 +66,63 @@ def join_inside(root: str | os.PathLike, rel: str) -> Path:
     return p
 
 
-def _marks_game(folder: Path) -> bool:
+_archive_cache: dict[tuple, bool] = {}
+
+
+def _game_archive(path: Path) -> bool:
+    """Is ``path`` the game's archive: a zip (also with the game's own end signature, ``datasource._open_zip``) whose
+    directory names one of the engine's file types (only the zip's directory is read; cached by path, size and
+    time)?"""
     try:
-        names = os.listdir(folder)
+        st = path.stat()
     except OSError:
         return False
-    for n in names:
-        low = n.lower()
-        if low in GAME_FILES or low.endswith(PACK_SUFFIX):
-            return True
-    return False
+    key = (str(path), st.st_size, st.st_mtime_ns)
+    if key not in _archive_cache:
+        found = False
+        try:
+            z = _open_zip(path)
+        except (OSError, zipfile.BadZipFile, ValueError, EOFError):
+            z = None
+        if z is not None:
+            try:
+                found = any(_GAME_ENTRY.search(n) for n in z.namelist()[:20000])
+            finally:
+                z.close()
+                z.fp_owner.close()
+        _archive_cache[key] = found
+    return _archive_cache[key]
+
+
+def marks_game(folder: str | os.PathLike) -> bool:
+    """Is ``folder`` a game folder: it holds ``Zax.exe`` (any edition, any build; any case), or a ``Data.dat`` that is
+    the game's archive (``_game_archive``), or a ``Data.dat`` next to a language pack ``*.RED`` or next to the port's
+    marker ``zax-data.bin`` (its imported copy)? A ``data.dat`` or a ``*.RED`` alone (another program's file, a pack
+    on its own) does not make one (review 2026-11-21, E4)."""
+    folder = Path(folder)
+    try:
+        names = {n.lower(): n for n in os.listdir(folder)}
+    except OSError:
+        return False
+    if 'zax.exe' in names:
+        return True
+    if 'data.dat' not in names:
+        return False
+    if PORT_MARKER in names or any(n.endswith(PACK_SUFFIX) for n in names):
+        return True
+    return _game_archive(folder / names['data.dat'])
+
 
 
 def is_game_data(path: str | os.PathLike, roots=()) -> bool:
     """Is ``path`` (a file or folder, existing or not) part of a game installation: inside one of ``roots`` (the
-    configured game data, the gamedata folder of the workspace) or below a folder that holds ``Zax.exe``,
-    ``Data.dat`` or a language pack ``*.RED`` (any case; an unpacked ``Data/`` lies in such a folder)?"""
+    configured game data, the gamedata folder of the workspace) or in or below a game folder (``marks_game``; an
+    unpacked ``Data/`` lies in such a folder)?"""
     p = Path(path).expanduser().resolve()
     for r in roots:
         if r and inside(p, r):
             return True
-    return (p.is_dir() and _marks_game(p)) or any(_marks_game(f) for f in p.parents)
+    return (p.is_dir() and marks_game(p)) or any(marks_game(f) for f in p.parents)
 
 
 def atomic_write(path: str | os.PathLike, data: bytes) -> None:
