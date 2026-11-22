@@ -15,13 +15,14 @@ import struct
 CAUGHT = (struct.error, IndexError, OverflowError, RecursionError)
 
 
-def reader(fn=None, *, error: type[ValueError] = ValueError):
+def reader(fn=None, *, error: type[ValueError] = ValueError, caught: tuple = CAUGHT):
+    """``caught``: the exception types turned into ``error`` (default ``CAUGHT``)."""
     def wrap(fn):
         @functools.wraps(fn)
         def wrapped(*args, **kwargs):
             try:
                 return fn(*args, **kwargs)
-            except CAUGHT as e:
+            except caught as e:
                 raise error(f'malformed data ({fn.__module__.rsplit(".", 1)[-1]}.{fn.__qualname__}: '
                             f'{type(e).__name__}: {e})') from e
         return wrapped

@@ -861,8 +861,10 @@ class Schema:
     def open(cls, exe_path: str | Path, ds: DataSource, cache_dir: Path) -> 'Schema':
         """Load from the cache or generate from exe + text files (a few seconds)."""
         fid = file_id(exe_path)
-        file = Path(cache_dir) / f'schema-{fid[:16]}.json'
         did = data_id(ds)
+        # one file per exe and data (RV-9 review 10: with one file per exe, switching between two data folders or
+        # with and without a language pack rebuilt the schema every time)
+        file = Path(cache_dir) / f'schema-{fid[:16]}-{did[:12]}.json'
         try:
             data = json.loads(file.read_text(encoding='utf-8'))
             if data.get('version') == VERSION and data.get('exe') == fid and data.get('data') == did:

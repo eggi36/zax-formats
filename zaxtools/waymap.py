@@ -832,12 +832,14 @@ class Result:
     origin: list[int]                    # per way point: the index in inputs.polygons that made it
 
 
-@reader
+@reader(caught=(OverflowError,))
 def build(level: Level, model_data) -> Result:
     """The level's way point map as the game calculates it. ``model_data(model path) -> ModelData|None``.
     ValueError for numbers the build cannot use (a polygon point "1e39" is inf as a float, which the game's fistp
-    turns into 0x80000000 and Python's round refuses: review 5 P63-3; the caller then has no way point map, and the
-    editor removes the old one instead of keeping a stale file)."""
+    turns into 0x80000000 and Python's round refuses with OverflowError, a NaN with ValueError: review 5 P63-3; the
+    caller then has no way point map, and the editor removes the old one instead of keeping a stale file). Only
+    OverflowError is turned into ValueError here: an IndexError or the like would be a bug of the builder and stays
+    one (RV-9 review 6)."""
     inp = collect(level, model_data)
     b = Builder(inp)
     b.calculate()
@@ -916,7 +918,11 @@ def model_data_source(ds, head=None):
         rel = f'Cache/Models/{model}.mdl16'
         if not ds.exists(rel):
             return None
-        return model_data(ds.read(rel), None if head is None else head.decode)
+        try:
+            data = ds.read(rel)
+        except (OSError, ValueError):       # an entry the archive cannot give (bad CRC): no bounds, activity unknown
+            return ModelData(None, None)
+        return model_data(data, None if head is None else head.decode)
     return get
 
 
@@ -933,8 +939,8 @@ def model_data(data: bytes, decode=None) -> ModelData:
     if decode is not None:
         try:
             m = decode(data)
-        except ValueError:
-            m = None
+        except Exception:           # noqa: BLE001 - any header the decoder cannot read leaves the activity unknown, as
+            m = None                # model_data_source did before (RV-9 review 7)
         if m is not None:
             activity = [o.cls for o in (m.values.get('Activity') or []) if o is not None]
     return ModelData(bounds, activity)

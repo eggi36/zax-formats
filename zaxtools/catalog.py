@@ -144,7 +144,7 @@ class Catalog:
             if progress and i % 50 == 0:
                 progress(i, total, translate('catalog', 'reading models …'))
             path = f[len(MODEL_DIR):-len('.mdl16')]
-            models[path] = _model_info(path, ds.read(f), head)
+            models[path] = _model_info(path, lambda f=f: ds.read(f), head)
         by_lower = {m.lower(): m for m in models}
         classes: dict[str, Counter] = {}
         seqs: dict[str, Counter] = {}
@@ -194,7 +194,7 @@ class Catalog:
                 self.models[known].own = True
                 out.append(known)
                 continue
-            self.models[path] = _model_info(path, f.read_bytes(), head, own=True)
+            self.models[path] = _model_info(path, f.read_bytes, head, own=True)
             out.append(path)
         return out
 
@@ -255,9 +255,15 @@ class Catalog:
         return cat
 
 
-def _model_info(path: str, d: bytes, head, own: bool = False) -> ModelInfo:
-    """The catalogue entry of one model file; a malformed file becomes an entry without sequences and with
-    ``head`` 'unreadable' instead of stopping the whole catalogue (review4 G-5)."""
+def _model_info(path: str, read, head, own: bool = False) -> ModelInfo:
+    """The catalogue entry of one model file (``read()`` gives its bytes); a file the archive cannot give (a bad CRC:
+    two entries of the Russian DATA.dat) or a malformed one becomes an entry without sequences and with ``head``
+    'unreadable' instead of stopping the whole catalogue (review4 G-5, RV-9 review 2)."""
+    try:
+        d = read()
+    except (OSError, ValueError) as e:
+        return ModelInfo(path, 'CEntityBase', '', [], header_cls='CEntityBase', own=own, head='unreadable',
+                         head_error=str(e)[:200])
     c, ai = header_info(d)
     try:
         names = [s.name for s in mdl.read_sequences(d)]

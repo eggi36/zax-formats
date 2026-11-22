@@ -28,8 +28,11 @@ from zaxtools.exeschema import Schema, find_exe
 from zaxtools.modelhead import DecodeError, ModelHead
 
 ROOT = Path(__file__).resolve().parent.parent
-# zax-decomp (docs/fields.csv): ZAX_DECOMP, else the folder zax-decomp next to this repository
-DECOMP = Path(os.environ.get('ZAX_DECOMP') or ROOT.parent / 'zax-decomp')
+# zax-decomp (docs/fields.csv): ZAX_DECOMP, else the folder zax-decomp next to this repository, or next to the
+# repository a git worktree (.claude/worktrees/<name>) belongs to: the first parent folder that holds one
+DECOMP = Path(os.environ.get('ZAX_DECOMP') or next(
+    (d / 'zax-decomp' for d in ROOT.parents if (d / 'zax-decomp' / 'docs' / 'fields.csv').is_file()),
+    ROOT.parent / 'zax-decomp'))
 
 TEXT_SUFFIXES = ('.zax', '.txt', '.zgt', '.can', '.sty', '.dificulty', '.quips', '.foo')
 

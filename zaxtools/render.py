@@ -145,8 +145,10 @@ def surface_kind(p) -> str:
 def on_ground(p) -> bool:
     """"On Ground" of a polygon; 1 without the field, like the constructor in Zax.exe (0x55d880). Both polygon
     fields are read with the game's integer reader (``exeschema.c_atoi``, as ``game_read`` does for the int and
-    bool kinds), so "abc" or "1e400" no longer stop the drawing and "00" is 0 (review 5 P62-5) [assumption: an empty
-    value is read as 0 too]."""
+    bool kinds), so "abc" or "1e400" no longer stop the drawing and "00" is 0 (review 5 P62-5). An empty value gives 0:
+    FromText of the int and bool kinds is atoi, the empty text included [confirmed: zax-decomp/docs/DECOMPILATION.md
+    section 6, FromText cases with the empty text]; that the level reader hands an empty "On Ground=" to FromText
+    rather than skipping the line [assumption: not run; no edition has such a line]."""
     v = p.get('On Ground')
     return True if v is None else c_atoi(v) != 0
 
