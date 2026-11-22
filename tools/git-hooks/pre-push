@@ -1,6 +1,7 @@
 #!/bin/sh
-# Refuses a push that would publish game data, the internal test setup or private words. The same file in zax-redone,
-# zax-formats, zax-editor, zax-launcher, zax-testtools and zax-packs. Install: git config core.hooksPath tools/git-hooks
+# Refuses a push that would publish game data, the internal test setup or private words. The same file in all seven
+# repositories: zax-decomp, zax-redone, zax-formats, zax-editor, zax-launcher, zax-testtools and zax-packs.
+# Install: git config core.hooksPath tools/git-hooks
 #
 # What is checked: every commit the remote does not have yet (not reachable from the pushed ref's old value or from the
 # remote's tracking refs), every annotated tag being pushed, and every file those commits add or change:
@@ -14,7 +15,13 @@
 #     the words of "private_words" and the VM names (below) in any case, the rest as written. Not used: "share_root"
 #     (the generic mount folder).
 #     In zax-redone and zax-testtools (private) the VM names (lan.host, lan.client, lan.client2, macvm.name, exclude)
-#     are allowed in files and messages: their docs and tools work with them. Everything else applies everywhere;
+#     are allowed in files and messages: their docs and tools work with them. In zax-decomp's history as published on
+#     2026-11-22 one commit message and 15 blobs (docs/DECOMPILATION.md, docs/TODO.md) name such labels: exactly those
+#     (VM_NAME_EXEMPT, by full SHA-1) are exempt from the VM name check, every other check still applies to them, and
+#     anything new is checked (the owner's decision of 2026-11-21: no history rewrite, no force push; review4 F4). The
+#     values of local.json other than the private words and the VM names are matched in any case too (as written below
+#     THIRD_PARTY_DIRS, whose sources hold common words in other cases). Everything else
+#     applies everywhere;
 #   - home folder paths: /Users/<name>, /home/<name>, <drive>:\Users\<name> (also with doubled backslashes; with or
 #     without a separator after the name; not a name of dots only, "/Users/..."), except the made-up names of HOME_ALLOW
 #     and below THIRD_PARTY_DIRS;
@@ -22,11 +29,16 @@
 #     noreply@anthropic.com); in text files also example.com/.org/.net (RFC 2606), the addresses of MAIL_ALLOW below and
 #     anything below a path of THIRD_PARTY_DIRS (third-party sources with their licence texts). Binary files are not
 #     checked for addresses (random bytes would look like one), only for the words above, unless they are UTF-16 text;
-#   - game data: any history touching gamedata/ (or its old name spieldaten/); anywhere, a file named Zax.exe or ending
-#     in .dat .red .zax .way .rds .frm .frm16 .seq .seq16 .mdl .mdl16 .wav .ogg .bik (any case); a binary file that is a
-#     zip (Data.dat and the .RED packs are zips), an exe/dll (MZ), Bink, Ogg or RIFF WAVE; any file over 20 MB.
-#     GAME_DATA_ALLOW lists the paths exempt from these (small test fixtures; none in any of the repositories, checked
-#     with git ls-files and the whole history on 2026-11-14).
+#   - game data: any history touching gamedata/ (or its old name spieldaten/, in any case); anywhere, a file named
+#     Zax.exe, Zax.CFG (the CD key) or Local.txt, or ending in .dat .red .zax .way .rds .frm .frm16 .seq .seq16 .mdl
+#     .mdl16 .wav .ogg .bik .pal .bmp .tga .zgt .sty .can .quips .foo .dificulty .pk .pak (any case; the types of
+#     DATA.dat and Editor.pak); a binary file that is a zip (Data.dat and the .RED packs are zips), an exe/dll (MZ),
+#     Bink, Ogg, RIFF WAVE or a BMP; a text line "CD Key=<value>" (a Zax.CFG's key under another name); any file over
+#     20 MB. GAME_DATA_ALLOW lists the paths exempt from these (small test fixtures; none in any of the repositories,
+#     checked with git ls-files and the whole history on 2026-11-14 and 2026-11-22);
+#   - images (.png .jpg .jpeg .gif .ico .webp by name, PNG/JPEG/GIF by content): game art cannot be told from a
+#     screenshot by the hook, so an image is refused except below IMAGE_ALLOW's folders (the README screenshots of
+#     zax-launcher and zax-editor, the owner's decision of 2026-11-14).
 # Without that local.json (ZAX_LOCAL_JSON, else ZAX_TESTTOOLS/vmtest/local.json, else zax-testtools next to this
 # repository's main checkout; zax-testtools itself: its own vmtest/local.json) or without "private_words" in it, every
 # push is refused, so a check is never skipped silently. Errors of git or of the check refuse the push as well.
@@ -47,10 +59,34 @@ MAIL_ALLOW = {                   # third-party authors credited outside THIRD_PA
     'madler@alumni.caltech.edu',            # zax-redone: zlib's author (reimpl/licenses.sh)
 }
 PRIVATE_REPOS = {'zax-redone', 'zax-testtools'}   # VM names allowed (see above)
+# zax-decomp's published history (origin/main d0c837c, 2026-11-22) as it is: these objects may name the VM labels
+# (review4 F4; listed by a scan of every commit and blob of origin/main that printed no value); nothing else is exempt
+VM_NAME_EXEMPT = {'zax-decomp': {
+    '378f5d5c8b6b7b92f62e0d88cf5a9be64e99c444',
+    '3b2b5666791f7d64b70343f4163f33849b2fb935',
+    '50f116162ebcb2a4b2fb0b4cc8dd37eb30a40d70',
+    '51ea6dd9583606a499b4142e47a823ee20129aeb',
+    '5a30a995f4808bae5ffd41203e72b016c1597c45',
+    '62285afba875deae7913405438b125056208f5cf',
+    '7aac978e16d2b4dd154de47a3c886379cc14c354',
+    '8904dba6dcf975e9599bd8a5b4c62ef22e29898a',
+    '8e8633401acf5b8cb2ad07acae41730492fba345',
+    '92e7cc1262e7d6774ad5031bebe34f41fb5d1029',
+    '98761dba190b7f2cafb868056e0f4ab65908129a',
+    'a94f16ec89ae4d7d78bd9377d6ddf0f203156ee6',
+    'd26039fb7989c57f64e476b8ec800118e23b0121',
+    'e0dd311cea9fb3ea95f5f2dc6d7d264e121bef5a',
+    'f41e9eba0921854c9dcbd46caa6109567856d557',
+    'f7e709ff24a046e1435132fe0d51cd4e91a58310'
+}}
+IMAGE_ALLOW = {'zax-launcher': ('docs/images/',), 'zax-editor': ('docs/images/',)}   # repository: folders
+IMAGE_EXT = ('.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp')
+GAME_NAMES = {'zax.exe', 'zax.cfg', 'local.txt'}
 VM_NAME_KEYS = {'lan.host', 'lan.client', 'lan.client2', 'macvm.name', 'exclude'}
 SKIP_KEYS = {'share_root'}
 GAME_EXT = ('.dat', '.red', '.zax', '.way', '.rds', '.frm', '.frm16', '.seq', '.seq16', '.mdl', '.mdl16',
-            '.wav', '.ogg', '.bik')
+            '.wav', '.ogg', '.bik', '.pal', '.bmp', '.tga', '.zgt', '.sty', '.can', '.quips', '.foo', '.dificulty',
+            '.pk', '.pak')
 MAX_SIZE = 20 << 20
 ZERO = '0' * 40
 
@@ -132,13 +168,19 @@ HOME16 = re.compile(br'/\x00(?:U\x00s\x00e\x00r\x00s|h\x00o\x00m\x00e)\x00/\x00[
                     br'|\x00[A-Za-z]\x00:\x00\\\x00U\x00s\x00e\x00r\x00s\x00\\')
 SETUP = 'a value of the test setup (local.json)'
 TEXT_RES = [(re.compile(alternation(private, False), re.I), 'a private word'),
-            (re.compile(alternation(vm_values, False), re.I), SETUP),
-            (re.compile(alternation(values, False)), SETUP)]
+            (re.compile(alternation(vm_values, False), re.I), SETUP + ': a VM name'),
+            (re.compile(alternation(values, False), re.I), SETUP)]
 BIN_RES = [(re.compile(alternation(private, True), re.I), 'a private word'),
-           (re.compile(alternation(vm_values, True), re.I), SETUP),
+           (re.compile(alternation(vm_values, True), re.I), SETUP + ': a VM name'),
            (re.compile(alternation(values, True)), SETUP),
            (HOME16, 'a home folder path (UTF-16)')]
-MAIL = re.compile(br'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
+VM_RES = (TEXT_RES[1][0], BIN_RES[1][0])
+# below THIRD_PARTY_DIRS the setup's other values as written: their sources hold common words in other cases
+THIRD_PARTY_TEXT_RES = TEXT_RES[:2] + [(re.compile(alternation(values, False)), SETUP)]
+KEY_LINE = re.compile(br'^[ \t]*CD[ _-]?Key[ \t]*=[ \t]*\S', re.I | re.M)
+# bounded parts: an unbounded local part tried every start of a long run of letters to its end (a text of millions of
+# letters without an @ took hours)
+MAIL = re.compile(br'[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}')
 
 
 def noreply(addr):
@@ -184,8 +226,9 @@ def find(msg):
         findings.append(msg)
 
 
-def scan(data, where, binary, third_party=False):
-    hits = [(rx.search(data), what) for rx, what in (BIN_RES if binary else TEXT_RES)]
+def scan(data, where, binary, third_party=False, vm_exempt=False):
+    hits = [(rx.search(data), what) for rx, what in (BIN_RES if binary else THIRD_PARTY_TEXT_RES if third_party else TEXT_RES)
+            if not (vm_exempt and any(rx is v for v in VM_RES))]
     if not third_party:
         hits.append((next((m for m in HOME.finditer(data) if home_name(m)), None), 'a home folder path'))
     for m, what in hits:
@@ -206,7 +249,7 @@ for line in lines:
     local_ref, local_sha, remote_ref, remote_sha = line.split()
     if local_sha == ZERO:
         continue
-    if git('rev-list', '-n', '1', local_sha, '--', 'gamedata', 'spieldaten').strip():
+    if git('rev-list', '-n', '1', local_sha, '--', ':(icase)gamedata', ':(icase)spieldaten').strip():
         refuse(local_ref + ' contains gamedata/ (or its old name spieldaten/) in its history')
     sha, kind = local_sha, git('cat-file', '-t', local_sha).decode().strip()
     while kind == 'tag':
@@ -246,7 +289,8 @@ for kind, shas in (('commit', commits), ('tag', tags)):
             if not l.startswith((b'tree ', b'parent ', b'object ')):
                 keep.append(l)
         meta = b'\n'.join(keep) + b'\n' + msg
-        scan(meta, '%s %s (author, committer, tagger or message)' % (kind, sha[:12]), False)
+        scan(meta, '%s %s (author, committer, tagger or message)' % (kind, sha[:12]), False,
+             vm_exempt=sha in VM_NAME_EXEMPT.get(repo, ()))
         for m in MAIL.finditer(meta):
             if not noreply(m.group().decode('ascii').lower()):
                 find('%s %s names an e-mail address other than a GitHub noreply one' % (kind, sha[:12]))
@@ -271,10 +315,12 @@ if commits:
         blobs.setdefault(new_sha, set()).add(path)
 
 for path in sorted({p for ps in blobs.values() for p in ps}):
-    scan(path.encode('utf-8', 'surrogateescape'), 'file name ' + path, False)
+    scan(path.encode('utf-8', 'surrogateescape'), 'file name ' + path, False, path.startswith(THIRD_PARTY_DIRS))
     name = path.rsplit('/', 1)[-1].lower()
-    if path not in GAME_DATA_ALLOW and (name == 'zax.exe' or name.endswith(GAME_EXT)):
+    if path not in GAME_DATA_ALLOW and (name in GAME_NAMES or name.endswith(GAME_EXT)):
         find('file name %s looks like game data' % path)
+    if name.endswith(IMAGE_EXT) and not path.startswith(IMAGE_ALLOW.get(repo, ())):
+        find('file name %s is an image outside the allowed folders (game art?)' % path)
 
 if blobs:
     cat = subprocess.Popen(['git', 'cat-file', '--batch'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
@@ -291,15 +337,21 @@ if blobs:
         binary = b'\0' in data[:8000]
         if len(data) > MAX_SIZE and not exempt:
             find('%s is larger than %d MB' % (where, MAX_SIZE >> 20))
-        if binary and not exempt and (data[:4] in (b'PK\x03\x04', b'OggS') or data[:2] == b'MZ'
+        if binary and not exempt and (data[:4] in (b'PK\x03\x04', b'OggS') or data[:2] in (b'MZ', b'BM')
                                       or data[:3] in (b'BIK', b'KB2') or (data[:4] == b'RIFF' and data[8:12] == b'WAVE')):
-            find('%s is a zip, exe, Bink, Ogg or WAVE file (game data?)' % where)
+            find('%s is a zip, exe, Bink, Ogg, WAVE or BMP file (game data?)' % where)
+        if (data[:8] == b'\x89PNG\r\n\x1a\n' or data[:3] == b'\xff\xd8\xff' or data[:4] == b'GIF8') and \
+                not all(p.startswith(IMAGE_ALLOW.get(repo, ())) for p in paths):
+            find('%s is an image outside the allowed folders (game art?)' % where)
         third_party = all(any(p.startswith(d) for d in THIRD_PARTY_DIRS) for p in paths)
-        scan(data, where, binary, third_party)
+        vm_exempt = sha in VM_NAME_EXEMPT.get(repo, ())
+        scan(data, where, binary, third_party, vm_exempt)
         text = utf16_text(data) if binary else data
         if text is not None and binary:
             where += ' (UTF-16 text)'
-            scan(text, where, False, third_party)
+            scan(text, where, False, third_party, vm_exempt)
+        if text is not None and not exempt and KEY_LINE.search(text):
+            find('%s:%d holds a "CD Key=" line (a Zax.CFG?)' % (where, text.count(b'\n', 0, KEY_LINE.search(text).start()) + 1))
         if text is not None and not third_party:
             for m in MAIL.finditer(text):
                 if not mail_allowed(m.group().decode('ascii').lower()):
