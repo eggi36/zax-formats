@@ -127,6 +127,13 @@ commit docs/shot.png 'fine\n' -m ok && expect="an image outside" run 1 "image by
 commit sub/pic.bin '\211PNG\r\n\032\n\000' -m ok && expect="an image outside" run 1 "image by content (PNG) outside an allowed folder"
 commit Gamedata/x.txt 'fine\n' -m ok && expect="contains gamedata/" run 1 "game data: Gamedata/ in another case (review5 P55-6)"
 commit reimpl/third_party/lib/README 'by someone''@''mail.invalid in /home/''someone\n' -m ok && run 0 "third-party folder: e-mail and home path allowed"
+commit 'reimpl/third_party/Users/''someone/a.c' 'fine\n' -m ok && expect="a home folder path" run 1 "third-party folder: a home path in a file name still refused"
+commit tools/gamedata/x.txt 'fine\n' -m ok && expect="contains gamedata/" run 1 "game data: a nested gamedata/ folder"
+git checkout -qb side2 && commit gamedata/Rules.txt 'fine\n' -m add && git rm -q gamedata/Rules.txt && git commit -qm rm &&
+    { git checkout -q main 2>/dev/null || git checkout -q master; } && git merge -q --no-ff side2 -m 'Merge side2' &&
+    expect="contains gamedata/" run 1 "game data: a merged side branch that added and deleted gamedata/"; git branch -qD side2
+commit sub/pic.bin 'RIFF\044\000\000\000WEBPVP8 \000' -m ok && expect="an image outside" run 1 "image by content (WebP) outside an allowed folder"
+commit sub/pic.bin '\000\000\001\000\001\000\020\020\000' -m ok && expect="an image outside" run 1 "image by content (ICO) outside an allowed folder"
 commit reimpl/third_party/lib/README 'by Quxblorf\n' -m ok && expect="a private word" run 1 "third-party folder: private word still refused"
 commit README.zlib 'by madler''@''alumni.caltech.edu\n' -m ok && run 0 "MAIL_ALLOW address outside the third-party folders"
 head -c 21000000 /dev/zero | tr '\0' 'a' > big.txt && git add big.txt && git commit -qm big && expect="larger than 20 MB" run 1 "a file over 20 MB"
@@ -166,6 +173,11 @@ commit a.txt 'fine\n' -m 'Quxblorf' && expect="a private word" run 1 "private re
 # zax-decomp's exemption covers its published objects by SHA-1 only: a new commit with a VM name is refused there
 setup zax-decomp
 commit a.txt 'QVMH-01\n' -m 'Seen on QVMC-01' && expect="a VM name" run 1 "zax-decomp: a new commit with VM names (review4 F4)"
+# zax-editor's and zax-formats' exemptions (their published CLAUDE.md blobs) do not reach new objects either
+setup zax-editor
+commit CLAUDE.md 'on QVMH-01\n' -m ok && expect="a VM name" run 1 "zax-editor: a new CLAUDE.md with a VM name"
+setup zax-formats
+commit CLAUDE.md 'on QVMC-02\n' -m ok && expect="a VM name" run 1 "zax-formats: a new CLAUDE.md with a VM name"
 # the README screenshots of zax-launcher and zax-editor (docs/images/) are allowed, other folders not
 setup zax-launcher
 commit docs/images/start.png '\211PNG\r\n\032\n\000' -m ok && run 0 "zax-launcher: docs/images/*.png allowed"

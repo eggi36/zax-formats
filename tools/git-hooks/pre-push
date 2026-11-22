@@ -16,9 +16,10 @@
 #     (the generic mount folder).
 #     In zax-redone and zax-testtools (private) the VM names (lan.host, lan.client, lan.client2, macvm.name, exclude)
 #     are allowed in files and messages: their docs and tools work with them. In zax-decomp's history as published on
-#     2026-11-22 one commit message and 15 blobs (docs/DECOMPILATION.md, docs/TODO.md) name such labels: exactly those
-#     (VM_NAME_EXEMPT, by full SHA-1) are exempt from the VM name check, every other check still applies to them, and
-#     anything new is checked (the owner's decision of 2026-11-21: no history rewrite, no force push; review4 F4). The
+#     2026-11-22 one commit message and 15 blobs (docs/DECOMPILATION.md, docs/TODO.md) name such labels, in zax-editor's
+#     10 and zax-formats' 3 blobs of CLAUDE.md: exactly those (VM_NAME_EXEMPT, by full SHA-1) are exempt from the VM
+#     name check, every other check still applies to them, and anything new is checked (the owner's decisions of
+#     2026-11-21 and 2026-11-22: no history rewrite, no force push; review4 F4). The
 #     values of local.json other than the private words and the VM names are matched in any case too (as written below
 #     THIRD_PARTY_DIRS, whose sources hold common words in other cases). Everything else
 #     applies everywhere;
@@ -29,14 +30,15 @@
 #     noreply@anthropic.com); in text files also example.com/.org/.net (RFC 2606), the addresses of MAIL_ALLOW below and
 #     anything below a path of THIRD_PARTY_DIRS (third-party sources with their licence texts). Binary files are not
 #     checked for addresses (random bytes would look like one), only for the words above, unless they are UTF-16 text;
-#   - game data: any history touching gamedata/ (or its old name spieldaten/, in any case); anywhere, a file named
+#   - game data: any history touching a gamedata/ folder at any depth (or its old name spieldaten/, in any case, also on
+#     a merged side branch); anywhere, a file named
 #     Zax.exe, Zax.CFG (the CD key) or Local.txt, or ending in .dat .red .zax .way .rds .frm .frm16 .seq .seq16 .mdl
 #     .mdl16 .wav .ogg .bik .pal .bmp .tga .zgt .sty .can .quips .foo .dificulty .pk .pak (any case; the types of
 #     DATA.dat and Editor.pak); a binary file that is a zip (Data.dat and the .RED packs are zips), an exe/dll (MZ),
 #     Bink, Ogg, RIFF WAVE or a BMP; a text line "CD Key=<value>" (a Zax.CFG's key under another name); any file over
 #     20 MB. GAME_DATA_ALLOW lists the paths exempt from these (small test fixtures; none in any of the repositories,
 #     checked with git ls-files and the whole history on 2026-11-14 and 2026-11-22);
-#   - images (.png .jpg .jpeg .gif .ico .webp by name, PNG/JPEG/GIF by content): game art cannot be told from a
+#   - images (.png .jpg .jpeg .gif .ico .webp by name, PNG/JPEG/GIF/WebP/ICO by content): game art cannot be told from a
 #     screenshot by the hook, so an image is refused except below IMAGE_ALLOW's folders (the README screenshots of
 #     zax-launcher and zax-editor, the owner's decision of 2026-11-14).
 # Without that local.json (ZAX_LOCAL_JSON, else ZAX_TESTTOOLS/vmtest/local.json, else zax-testtools next to this
@@ -78,6 +80,21 @@ VM_NAME_EXEMPT = {'zax-decomp': {
     'e0dd311cea9fb3ea95f5f2dc6d7d264e121bef5a',
     'f41e9eba0921854c9dcbd46caa6109567856d557',
     'f7e709ff24a046e1435132fe0d51cd4e91a58310'
+}, 'zax-editor': {   # CLAUDE.md as published (origin/main 6585207; the owner's "Ja" of 2026-11-22; no commit message names one)
+    '05d2a0a463bc3e544e3b0623a543c7c83c0e48f6',
+    '474df2fa28e4cf0c34fee620f0bffa56de73830f',
+    '5dc9cadafbaffc283fa4d2a1e877fb814b5c94b4',
+    '7fdbbc51d64f23eb18480f1d88159bcafadfb216',
+    '8ab5f37a5fd137521d0ccefa8de601be50fbbdae',
+    '8d2356c39ba8af4818bb7378aef6f094399145ba',
+    'a08f819e26b4e611455efa0ecdeddaa8fc412a7c',
+    'a89a9b3db63a3698ab47cc525cfdd6aeb4a7a0ab',
+    'e3b3eb960a5d7c4544cec90737e6c9ad2e6be5e1',
+    'ed5bbe0f361ba4824049978e2dfd033dcc722449'
+}, 'zax-formats': {   # CLAUDE.md as published (origin/main 033376e; the same decision)
+    '02b5b376d142c8b4d541e718fd1500480eb708f1',
+    '12e5ffa602b6e637f8cc076834e65fa2197fe52a',
+    'a814f994531419c03ae15d490e4d7640af994683'
 }}
 IMAGE_ALLOW = {'zax-launcher': ('docs/images/',), 'zax-editor': ('docs/images/',)}   # repository: folders
 IMAGE_EXT = ('.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp')
@@ -226,8 +243,9 @@ def find(msg):
         findings.append(msg)
 
 
-def scan(data, where, binary, third_party=False, vm_exempt=False):
-    hits = [(rx.search(data), what) for rx, what in (BIN_RES if binary else THIRD_PARTY_TEXT_RES if third_party else TEXT_RES)
+def scan(data, where, binary, third_party=False, vm_exempt=False, values_exact=False):
+    exact = third_party or values_exact
+    hits = [(rx.search(data), what) for rx, what in (BIN_RES if binary else THIRD_PARTY_TEXT_RES if exact else TEXT_RES)
             if not (vm_exempt and any(rx is v for v in VM_RES))]
     if not third_party:
         hits.append((next((m for m in HOME.finditer(data) if home_name(m)), None), 'a home folder path'))
@@ -249,7 +267,10 @@ for line in lines:
     local_ref, local_sha, remote_ref, remote_sha = line.split()
     if local_sha == ZERO:
         continue
-    if git('rev-list', '-n', '1', local_sha, '--', ':(icase)gamedata', ':(icase)spieldaten').strip():
+    # --full-history: a side branch that adds and deletes gamedata/ files is not simplified away behind a merge; any
+    # depth (tools/gamedata/ too); review of RV-10, finding 3
+    if git('rev-list', '--full-history', '-n', '1', local_sha, '--', ':(icase,glob)**/gamedata/**',
+           ':(icase,glob)**/spieldaten/**').strip():
         refuse(local_ref + ' contains gamedata/ (or its old name spieldaten/) in its history')
     sha, kind = local_sha, git('cat-file', '-t', local_sha).decode().strip()
     while kind == 'tag':
@@ -315,7 +336,8 @@ if commits:
         blobs.setdefault(new_sha, set()).add(path)
 
 for path in sorted({p for ps in blobs.values() for p in ps}):
-    scan(path.encode('utf-8', 'surrogateescape'), 'file name ' + path, False, path.startswith(THIRD_PARTY_DIRS))
+    # a third-party file's name: the setup's values as written, the home path check stays (review of RV-10, finding 5)
+    scan(path.encode('utf-8', 'surrogateescape'), 'file name ' + path, False, values_exact=path.startswith(THIRD_PARTY_DIRS))
     name = path.rsplit('/', 1)[-1].lower()
     if path not in GAME_DATA_ALLOW and (name in GAME_NAMES or name.endswith(GAME_EXT)):
         find('file name %s looks like game data' % path)
@@ -340,7 +362,8 @@ if blobs:
         if binary and not exempt and (data[:4] in (b'PK\x03\x04', b'OggS') or data[:2] in (b'MZ', b'BM')
                                       or data[:3] in (b'BIK', b'KB2') or (data[:4] == b'RIFF' and data[8:12] == b'WAVE')):
             find('%s is a zip, exe, Bink, Ogg, WAVE or BMP file (game data?)' % where)
-        if (data[:8] == b'\x89PNG\r\n\x1a\n' or data[:3] == b'\xff\xd8\xff' or data[:4] == b'GIF8') and \
+        if (data[:8] == b'\x89PNG\r\n\x1a\n' or data[:3] == b'\xff\xd8\xff' or data[:4] == b'GIF8'
+                or (data[:4] == b'RIFF' and data[8:12] == b'WEBP') or (binary and data[:4] == b'\x00\x00\x01\x00')) and \
                 not all(p.startswith(IMAGE_ALLOW.get(repo, ())) for p in paths):
             find('%s is an image outside the allowed folders (game art?)' % where)
         third_party = all(any(p.startswith(d) for d in THIRD_PARTY_DIRS) for p in paths)
