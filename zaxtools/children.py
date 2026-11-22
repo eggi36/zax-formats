@@ -98,9 +98,9 @@ def add_child(part: LevelPart, node: tf.Node, index: int | None = None) -> Level
     arr = child_array(part, create=True)
     elems = [c for c in arr.children if isinstance(c, tf.Node) and c.key == 'Child']
     if index is None or index >= len(elems):
-        at = (arr.children.index(elems[-1]) + 1) if elems else len(arr.children)
+        at = (_at(arr.children, elems[-1]) + 1) if elems else len(arr.children)
     else:
-        at = arr.children.index(elems[index])
+        at = _at(arr.children, elems[index])
     arr.children.insert(at, node)
     arr.update_array_count()
     return LevelPart(node)
@@ -113,9 +113,15 @@ def remove_child(part: LevelPart, child: LevelPart) -> int:
         raise ValueError('the part has no children')
     elems = [c for c in arr.children if isinstance(c, tf.Node) and c.key == 'Child']
     i = next(k for k, c in enumerate(elems) if c is child.node)
-    arr.children.remove(child.node)
+    del arr.children[_at(arr.children, child.node)]
     arr.update_array_count()
     return i
+
+
+def _at(items: list, node) -> int:
+    """The position of ``node`` itself: ``list.index``/``remove`` compare with ``==``, and a duplicated or pasted
+    child equals its original field for field, so they hit the first equal one (review 5 P56-1)."""
+    return next(k for k, c in enumerate(items) if c is node)
 
 
 def find_parent(parts, node: tf.Node) -> LevelPart | None:
@@ -295,6 +301,14 @@ def paste_problem(nodes, parent: LevelPart, root: LevelPart | None = None, schem
     for n in nodes:
         if n.value == UPPER_BODY and not derives(parent.cls, 'CEntityAnimated', schema):
             return PASTE_UPPER_BODY_PARENT
+    # the walking-AI rule holds for every pasted node and its own children, all under the same root (review 5
+    # P56-2: a holder whose Child List has such an upper body passed before)
+    todo = list(nodes)
+    while todo:
+        n = todo.pop()
+        sub = child_array(LevelPart(n))
+        if sub is not None:
+            todo += [c for c in sub.children if isinstance(c, tf.Node) and c.key == 'Child']
         act = n.block('Activity')
         ais = [e for e in act.array_elements() if isinstance(e, tf.Node)] if act is not None else []
         if any(derives(e.value, WALKING_UPPER_BODY_AI, schema) for e in ais) and \

@@ -53,14 +53,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from . import children as _children
 from . import textformat as tf
 from .level import LevelPart
 from .mdl import Model, Sequence
 
-# Classes derived from CEntityAnimated / CEntityCharacter (zax-decomp/docs/classes.csv, the parent chain)
-ANIMATED = frozenset({'CEntityAnimated', 'CEntityAnimatedUpperBody', 'CEntityCharacter', 'CEntityFlying',
-                      'CEntityMovable', 'CEntityOm', 'CEntityOverlayWalking', 'CEntityProjectile',
-                      'CEntityStationaryCharacter', 'CEntityWalking'})
+# Classes derived from CEntityAnimated (zax-decomp/docs/classes.csv, the parent chain): children.py's list
+ANIMATED = _children.ANIMATED
 CHARACTERS = frozenset({'CEntityCharacter', 'CEntityFlying', 'CEntityOm', 'CEntityOverlayWalking',
                         'CEntityStationaryCharacter', 'CEntityWalking'})
 
@@ -225,6 +224,9 @@ def layer_frame(s: Sequence, a: PartAnim, index: int, t: float | None) -> int | 
     return index
 
 
+MAX_SPAN = 100_000
+
+
 def timed_next(seconds: float, fps: float, offset: int) -> float:
     """The first time after ``seconds`` at which ``timed_frame(t, fps, offset)`` gives another frame (it moves
     on whole milliseconds only); inf if it never changes. Exact: the candidate milliseconds are evaluated with
@@ -236,7 +238,9 @@ def timed_next(seconds: float, fps: float, offset: int) -> float:
     ticks = int(math.floor(seconds * 1000))
     off = offset & OFFSET_MASK
     now = np.rint(np.float32((ticks & TICK_MASK) * f32 * 0.001 + off))
-    span = int(math.ceil(2000 / abs(f32))) + 4
+    # at most MAX_SPAN candidates: a tiny fps in a foreign model would otherwise allocate gigabytes; the end of
+    # the range is returned then, to look again (review 5 P56-3; the shipped and imported fps are >= 0.1, span <= 20004)
+    span = min(int(math.ceil(2000 / abs(f32))) + 4, MAX_SPAN)
     cand = np.arange(ticks + 1, ticks + 1 + span, dtype=np.int64)
     x = np.rint(((cand & TICK_MASK) * f32 * 0.001 + off).astype(np.float32))
     hit = np.flatnonzero(x != now)
@@ -286,9 +290,10 @@ def layer_animated(s: Sequence, a: PartAnim) -> bool:
     return s.auto_animate or (a.animated and a.moving)
 
 
-# The AIs that make an upper body show its parent's sequence and frame (CSameAsParentAI and the class
-# derived from it, zax-decomp/docs/classes.csv)
-SAME_AS_PARENT = frozenset({'CSameAsParentAI', 'CWalkingUpperBodyAI'})
+# The AIs that make an upper body show its parent's sequence and frame: CSameAsParentAI and the classes derived
+# from it (zax-decomp/docs/classes.csv), children.py's list; the two CPlayerWalking...AI were missing here until
+# 2026-11-22 (review 5 P56-5; they run CSameAsParentAI's Update once their item exists, DECOMPILATION.md section 8)
+SAME_AS_PARENT = _children.SAME_AS_PARENT_AIS
 
 
 def _same_as_parent_ai(part: LevelPart) -> tf.Node | None:

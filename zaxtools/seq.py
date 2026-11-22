@@ -33,6 +33,7 @@ import numpy as np
 
 from . import frm
 from .mdl import Frame
+from .malformed import reader
 
 TAG = struct.pack('<ff', 27.0, 207.0)
 
@@ -59,6 +60,7 @@ class SeqFile:
         return self.frames[int(seconds * self.fps) % len(self.frames)]
 
 
+@reader
 def load(data: bytes, palette: np.ndarray | None = None) -> SeqFile:
     """Read a file. For .seq (8 bit) pass ``palette`` (frm.load_palette)."""
     if data[:8] != TAG:
@@ -73,6 +75,7 @@ def load(data: bytes, palette: np.ndarray | None = None) -> SeqFile:
     box = struct.unpack_from('<4i', data, o)
     o += 16
     out = SeqFile(total, round(fps, 3), mode, box, load_flags=flags, offset=offset, fps_raw=fps)
+    pixels = 0
     for _ in range(total):
         marker = data[o]
         o += 1
@@ -82,8 +85,10 @@ def load(data: bytes, palette: np.ndarray | None = None) -> SeqFile:
         if marker != 1:
             raise ValueError(f'unexpected frame marker {marker} at offset {o - 1}')
         rgba, hd, end = frm.decode(data, o, palette)
+        pixels += hd.width * hd.height
+        frm.check_budget(pixels, frm.MAX_FILE_PIXELS)
         out.frames.append(Frame(rgba, hd.hot_x, hd.hot_y, o))
-        o = end if hd.rle or end == len(data) else end + 4 * hd.height
+        o = end
     if o != len(data):
         raise ValueError(f'{len(data) - o} bytes after the last frame')
     return out

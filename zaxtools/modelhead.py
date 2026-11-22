@@ -25,6 +25,7 @@ import struct
 
 from . import textformat as tf
 from .exeschema import Schema
+from .malformed import reader
 
 VERSION = 5          # increase when the decoder changes (invalidates catalogues)
 SEQ_TAG = struct.pack('<ff', 27.0, 758.0)
@@ -93,10 +94,12 @@ class ModelHead:
         self.trace: list | None = None      # for debugging: [(offset, path, encoding)]
 
     # --- Reading -------------------------------------------------------------------
+    @reader(error=DecodeError)
     def decode(self, data: bytes) -> Obj:
         """CModel from the model header. Checks that the path "Models/..." follows."""
         return self.decode_end(data)[0]
 
+    @reader(error=DecodeError)
     def decode_end(self, data: bytes) -> tuple[Obj, int]:
         """CModel and the offset after it (where the number of sequences and the path follow)."""
         end = data.find(SEQ_TAG)
@@ -106,6 +109,7 @@ class ModelHead:
             raise DecodeError(f'CModel ends at {r.o}, no path "Models/" after it')
         return m, r.o
 
+    @reader(error=DecodeError)
     def decode_object(self, data: bytes, offset: int, cls: str) -> tuple[Obj, int]:
         """An embedded object of class ``cls`` at ``offset`` (e.g. a sequence's CAnimationTrigger):
         (object, offset after it)."""
@@ -119,7 +123,7 @@ class ModelHead:
         r.f4()          # class signature
         ndyn = r.i4()   # Dynamic Properties
         if not 0 <= ndyn < 50:
-            raise DecodeError(f'{path}: {ndyn} dynamische Eigenschaften')
+            raise DecodeError(f'{path}: {ndyn} dynamic properties')
         dynamic = [(r.str(), self._ptr(r, f'{path}#dyn')) for _ in range(ndyn)]
         if not self.s.known(cls):
             raise DecodeError(f'{path}: class {cls} unknown')
@@ -162,7 +166,7 @@ class ModelHead:
         if e == 'poly':
             r.need(8)
             if r.d[r.o:r.o + 7] != b'POLY2D\0':
-                raise DecodeError(f'{path}: POLY2D erwartet')
+                raise DecodeError(f'{path}: POLY2D expected')
             r.o += 7
             r.u8()
             n = r.i4()
@@ -179,10 +183,10 @@ class ModelHead:
         if e == 'arr':
             n = r.i4()
             if not 0 <= n < 1000:
-                raise DecodeError(f'{path}: Anzahl {n}')
+                raise DecodeError(f'{path}: count {n}')
             vk = None if self.s.element_class(cls, f['name']) else self.s.element_value_kind(cls, f['name'])
             if vk:                                   # array of values (e.g. Segments, Sounds)
-                return [('wert', vk, self._value(r, {'name': f['name'], 'enc': vk}, cls, path)) for _ in range(n)]
+                return [('value', vk, self._value(r, {'name': f['name'], 'enc': vk}, cls, path)) for _ in range(n)]
             return [self._ptr(r, f'{path}[{i}]') for i in range(n)]
         if e == 'map' and (f.get('owner', cls), f['name']) in INLINE_LISTS:
             n = r.i4()
@@ -199,7 +203,7 @@ class ModelHead:
         if e == 'pmap':
             n = r.i4()
             if not 0 <= n < 1000:
-                raise DecodeError(f'{path}: Anzahl {n}')
+                raise DecodeError(f'{path}: count {n}')
             return [(r.str(), self._ptr(r, f'{path}[{i}]')) for i in range(n)]
         raise DecodeError(f'{path}: field type {e} unknown')
 

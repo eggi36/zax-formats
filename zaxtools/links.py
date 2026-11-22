@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass, field
 
 from . import textformat as tf
-from .i18n import QT_TRANSLATE_NOOP
+from .i18n import QT_TRANSLATE_NOOP, translate
 from .level import Level, LevelPart
 
 # field -> kind of link
@@ -61,11 +61,26 @@ def names_in(value: str) -> list[str]:
         if not v or v.startswith('$'):
             continue
         m = _RANGE.search(v)
-        if m and int(m[2]) - int(m[1]) < 1000:
+        # a reversed range (#50-1#) stays a literal name, reported as not in the level, instead of naming nothing
+        # (review 5 P61-7); how the game expands it, and a second range in one entry: [assumption] not checked
+        if m and 0 <= int(m[2]) - int(m[1]) < 1000:
             out += [f'{v[:m.start()]}{i}{v[m.end():]}'.strip() for i in range(int(m[1]), int(m[2]) + 1)]
         else:
             out.append(v)
     return out
+
+
+def name_problem(name: str) -> str | None:
+    """Why ``name`` would not come back as itself when written into a reference field, or None: a comma splits it into
+    two names, a leading ``$`` makes it a placeholder, ``#a-b#`` a range (review 5 P61-6). ``rename_plan`` writes such a
+    name into no reference. The text is for a user interface."""
+    if ',' in name:
+        return translate('links', 'a comma separates two names')
+    if name.strip().startswith('$'):
+        return translate('links', 'a leading “$” makes the name a placeholder')
+    if _RANGE.search(name):
+        return translate('links', '“#a-b#” makes the name a range')
+    return None
 
 
 def _fold(name: str) -> str:
@@ -152,6 +167,7 @@ class RenamePlan:
     edits: list[RefEdit] = field(default_factory=list)
     in_range: list[RefEdit] = field(default_factory=list)    # name is inside ``#a-b#``: kept
     shared: list[RefEdit] = field(default_factory=list)      # name also belongs to others: kept
+    unsafe: list[RefEdit] = field(default_factory=list)      # the new name has a name_problem: kept
 
     @property
     def count(self) -> int:
@@ -165,10 +181,12 @@ def rename_plan(level: Level, part: LevelPart, new_name: str, index: LinkIndex |
     spelling, like ``LinkIndex.resolve``); spaces around the entry are kept. Not changed are
     ranges ``#a-b#`` (the originals never mix ranges with lists, splitting would be guesswork)
     and names that other objects carry as well (the reference still hits the others). Both are
-    reported; ``edits[*].new`` or the old value.
+    reported; ``edits[*].new`` or the old value. A new name with a ``name_problem`` replaces no entry: the
+    references are reported in ``unsafe``.
     """
     index = index or LinkIndex(level)
     plan = RenamePlan()
+    unsafe = name_problem(new_name) is not None
     mine = lambda ts: any(t.node is part.node for t in ts)         # noqa: E731
     for p in level.parts:
         for cls, e in _refs(p.node, p.cls):
@@ -187,6 +205,9 @@ def rename_plan(level: Level, part: LevelPart, new_name: str, index: LinkIndex |
                     continue
                 if len(targets) > 1:
                     plan.shared.append(RefEdit(p, e, cls, e.value))
+                    continue
+                if unsafe:
+                    plan.unsafe.append(RefEdit(p, e, cls, e.value))
                     continue
                 lead = raw[:len(raw) - len(raw.lstrip())]
                 trail = raw[len(raw.rstrip()):]

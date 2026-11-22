@@ -8,8 +8,8 @@ The header data (class ``CLayerSaveData``) comes from two sources:
 - User input: name/location, size, music, environment, description, ground textures.
 
 Added are a start point "Game Start" in the middle (minimal object as in the test level,
-verified in the game) and a uniform ground. The mini map mapping is set so that the whole level
-fits centred into 176 x 121 pixels (see ``minimap_mapping``).
+verified in the game) and a uniform ground. The mini map mapping is the one the game computes for the
+image it draws (see ``minimap_mapping``).
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import numpy as np
 
 from .i18n import QT_TRANSLATE_NOOP
 from .level import GRID_CELL, Level
-from .minimap import SIZE
+from .minimap import game_mapping
 from .render import band_start
 
 # environment types (reverb of the sounds, EAX presets), order as in the exe
@@ -55,13 +55,14 @@ def grid_shape(width: int, height: int) -> tuple[int, int]:
 
 
 def minimap_mapping(width: int, height: int) -> tuple[float, float, float, float]:
-    """(X Scale, X Offset, Y Scale, Y Offset): same scale for both axes, as large as possible so
-    the level fits into 176 x 121, centred. The values of 01 Main are built like that (visible
-    area 4196 x 3204: Y Scale = 121/3204, X Offset = (176 - 4196 * s)/2 = 9) [confirmed]. The
-    game places the player marker with exactly these values."""
-    w, h = SIZE
-    s = min(w / width, h / height)
-    return s, (w - width * s) / 2, s, (h - height * s) / 2
+    """(X Scale, X Offset, Y Scale, Y Offset) of a new level: ``minimap.game_mapping`` of the whole level, the
+    rectangle the game draws the mini map image into (0x4ec280: area / zoom 12, never enlarged, centred). The
+    game places the player marker with the stored values (0x4ec3c0 computes its own only for Scale 0), so they
+    must describe that rectangle. Until 2026-11-22 the level was fitted into the whole 176 x 121 at the largest
+    scale (as the stored values of 01 Main are built), which for a level smaller than about 2112 x 1452 put the
+    marker up to 18 pixels outside the smaller picture (review 5 P61-1) [confirmed: code 0x4ec280/0x4ec3c0;
+    verified: game_mapping on the 42 originals with Scale 0]."""
+    return game_mapping((0, 0, width, height))
 
 
 def _f(v: float) -> str:

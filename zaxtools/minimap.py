@@ -28,7 +28,7 @@ SIZE = (176, 121)                 # width, height [verified on all mini maps]
 BORDER = (0, 24, 41)              # margin colour (RGB565 0x00C5) [verified]
 BORDER_INDEX = 0x80               # margin colour in the 8-bit mini map [verified]
 GAIN = (0.89, 0.92, 0.82)
-MAX_ZOOM = 12                     # Rules.txt, HUD Options: Max Zoom Factor [geprueft]
+MAX_ZOOM = 12                     # Rules.txt, HUD Options: Max Zoom Factor [verified]
 
 
 def _num(level: Level, key: str) -> float:
@@ -294,6 +294,10 @@ def _taps(n_in: int, n_out: int, scale: float):
             if down:
                 w = w * scale
             idx = -j if j < 0 else (j if j < n_in else n_in * 2 - j - 1)
+            # a downscale to 1 or 2 pixels reaches further than one mirror: such taps read outside the image in
+            # the exe [assumption: never in the originals]; here the nearest edge pixel (review 5 P61-3: was an
+            # IndexError or a wrap to the far side)
+            idx = min(max(idx, 0), n_in - 1)
             taps.append((idx, _f32(w)))
         lists.append(taps)
     k = max(len(t) for t in lists)

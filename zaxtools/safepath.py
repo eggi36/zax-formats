@@ -48,11 +48,43 @@ def relative_problem(name: str) -> str | None:
     return None
 
 
+_DEVICE = re.compile(r'^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)', re.I)
+
+
+def new_name_problem(name: str) -> str | None:
+    """Why ``name`` (one folder or file name the user gives a new file) cannot be created on Windows below the game's
+    Data folder or written into a level, or None: control characters, a trailing dot or space, and the reserved
+    device names (CON, NUL, COM1, …, with any extension) (review 5 P60-5). The text is for a user interface."""
+    if any(ord(c) < 0x20 or ord(c) == 0x7f for c in name):
+        return translate('safepath', 'the name contains a control character')
+    if name.endswith(('.', ' ')):
+        return translate('safepath', 'the name ends with a dot or a space')
+    if _DEVICE.match(name):
+        return translate('safepath', 'the name is reserved on Windows (CON, NUL, COM1, …)')
+    return None
+
+
 def inside(path: str | os.PathLike, root: str | os.PathLike) -> bool:
-    """Does ``path`` (resolved, links followed) lie inside ``root`` or equal it?"""
+    """Does ``path`` (resolved, links followed) lie inside ``root`` or equal it (also when spelled in another case on a
+    file system that ignores case)?"""
     p = Path(path).expanduser().resolve()
     r = Path(root).expanduser().resolve()
-    return p == r or r in p.parents
+    if p == r or r in p.parents:
+        return True
+    # APFS and NTFS ignore case, and resolve() keeps the spelling it was given: ".../casedir/data" names the folder
+    # ".../CaseDir/Data" too (review 5 P62-2). The existing ancestors are compared as files (device + inode).
+    try:
+        rs = r.stat()
+    except OSError:
+        return False
+    for a in (p, *p.parents):
+        try:
+            st = a.stat()
+        except OSError:
+            continue
+        if (st.st_dev, st.st_ino) == (rs.st_dev, rs.st_ino):
+            return True
+    return False
 
 
 def join_inside(root: str | os.PathLike, rel: str) -> Path:

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import zipfile
+import zlib
 from pathlib import Path
 
 
@@ -205,7 +206,12 @@ def _read_entry(z: zipfile.ZipFile, name: str) -> bytes:
     info = z.getinfo(name)
     if info.file_size > MAX_ENTRY:
         raise ValueError(f'{name}: {info.file_size} bytes unpacked, more than the limit of {MAX_ENTRY}')
-    return z.read(info)
+    try:
+        return z.read(info)
+    except (NotImplementedError, RuntimeError, zipfile.BadZipFile, EOFError, zlib.error) as e:
+        # a zip version, compression or encryption zipfile cannot read, a damaged entry: one error type for the
+        # callers, which catch ValueError and OSError (review 5 L1-6)
+        raise ValueError(f'{name}: not readable from the archive ({type(e).__name__}: {e})') from e
 
 
 def _key(rel: str) -> str:

@@ -141,9 +141,10 @@ def rect(x1: int, y1: int, x2: int, y2: int) -> list[tuple[float, float]]:
 def _f(node: tf.Node, key: str, default: float = 0.0) -> float:
     v = node.get(key)
     try:
-        return float(v) if v not in (None, '') else default
+        f = float(v) if v not in (None, '') else default
     except ValueError:
         return default
+    return f if math.isfinite(f) else default    # "inf"/"nan"/"1e999" (review 5 P61-4)
 
 
 def _i(node: tf.Node, key: str, default: int = 0) -> int:
@@ -291,6 +292,16 @@ def _spawn(ctx: _Ctx, ai: tf.Node) -> None:
         ctx.add('spawn', line, YELLOW, f'{ai.value}: Facing Angle={_fmt(a)}')
 
 
+MAX_SOUND_SAMPLES = 4096
+
+
+def _sound_scale(s: float, d: float) -> float:
+    """``q = s / d`` and ``q <= 1 ? q : 1``; with ``s`` and ``d`` 0 (Inner + Outer radius 0) the exe's x87 code
+    gets NaN, the compare fails and the scale is 1 (review 5 P61-2: was a ZeroDivisionError)."""
+    q = s / d if d else math.nan
+    return q if q <= 1 else 1.0
+
+
 def sound_lines(c, r0: float, r1: float, r2: float, rolloff: float):
     """CAmbientSoundAI 0x42dd30 without the ovals: the scale above the part, the fall-off curve over
     the silent radius (``rolloff`` = the level's "Rolloff", the listener value 0x713698 that its setter
@@ -306,12 +317,21 @@ def sound_lines(c, r0: float, r1: float, r2: float, rolloff: float):
     elif r2 > 0:
         t = s
         u = s / rolloff
-        while t < total:
-            q = s / (u * rolloff)
-            scale = q if q <= 1 else 1.0
-            pts.append((t + x, y - s * scale))
-            t += 1
-            u += 1
+        if total - s <= MAX_SOUND_SAMPLES:
+            while t < total:
+                scale = _sound_scale(s, u * rolloff)
+                pts.append((t + x, y - s * scale))
+                t += 1
+                u += 1
+        else:
+            # one point per world pixel of Max Distance, as the exe draws it, would be millions for a foreign
+            # level's huge value: every k-th pixel only, and the last one (review 5 P61-4; the originals' largest
+            # Max Distance is 2000)
+            n = math.ceil(total - s)
+            step = math.ceil(n / MAX_SOUND_SAMPLES)
+            for k in list(range(0, n, step)) + ([n - 1] if (n - 1) % step else []):
+                scale = _sound_scale(s, (u + k) * rolloff)
+                pts.append((t + k + x, y - s * scale))
     end = (x + total, y)
     pts += [end, (x, y)]
     return pts, ((math.trunc(end[0]), math.trunc(end[1]) + 10), math.trunc(scale * 100))

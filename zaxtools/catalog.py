@@ -31,7 +31,7 @@ from .i18n import translate
 from .level import Level
 
 from . import exeschema as _exeschema, modelhead as _modelhead
-VERSION = f'11-{_exeschema.VERSION}-{_modelhead.VERSION}'   # catalogue + schema + decoder
+VERSION = f'12-{_exeschema.VERSION}-{_modelhead.VERSION}'   # catalogue + schema + decoder
 MODEL_DIR = 'Cache/Models/'
 _SEQ_TAG = struct.pack('<ff', 27.0, 758.0)
 _CLASS_RE = re.compile(rb'C[A-Z][A-Za-z0-9]{3,}')
@@ -144,21 +144,18 @@ class Catalog:
             if progress and i % 50 == 0:
                 progress(i, total, translate('catalog', 'reading models …'))
             path = f[len(MODEL_DIR):-len('.mdl16')]
-            d = ds.read(f)
-            c, ai = header_info(d)
-            info = ModelInfo(path, c, ai, [s.name for s in mdl.read_sequences(d)], header_cls=c)
-            if head is None:
-                info.head = 'no-exe'
-            else:
-                _read_head(head, d, info)
-            models[path] = info
+            models[path] = _model_info(path, ds.read(f), head)
         by_lower = {m.lower(): m for m in models}
         classes: dict[str, Counter] = {}
         seqs: dict[str, Counter] = {}
         for i, f in enumerate(level_files):
             if progress:
                 progress(len(model_files) + i, total, translate('catalog', 'counting the use in levels …'))
-            for p in Level.from_bytes(ds.read(f)).parts:
+            try:
+                parts = Level.from_bytes(ds.read(f)).parts
+            except ValueError:          # one broken level of a mod pack does not stop the catalogue (review4 G-5)
+                continue
+            for p in parts:
                 m = by_lower.get((p.model or '').lower())
                 if m is None or p.position is None:
                     continue
@@ -173,6 +170,7 @@ class Catalog:
                 models[m].cls = c.most_common(1)[0][0]
         for m, c in seqs.items():
             models[m].level_sequence = c.most_common(1)[0][0]
+            _default_sequence(models[m])
         return cls(models, signature(ds, exe))
 
     def add_own(self, out_dir: Path, schema=None) -> list[str]:
@@ -196,14 +194,7 @@ class Catalog:
                 self.models[known].own = True
                 out.append(known)
                 continue
-            d = f.read_bytes()
-            c, ai = header_info(d)
-            info = ModelInfo(path, c, ai, [s.name for s in mdl.read_sequences(d)], header_cls=c, own=True)
-            if head is None:
-                info.head = 'no-exe'
-            else:
-                _read_head(head, d, info)
-            self.models[path] = info
+            self.models[path] = _model_info(path, f.read_bytes(), head, own=True)
             out.append(path)
         return out
 
@@ -246,21 +237,51 @@ class Catalog:
     def cached(cls, ds: DataSource, cache_dir: Path, exe: str | Path | None = None) -> 'Catalog | None':
         """The saved catalogue if it is current; None if it would have to be built (``open``)."""
         sig = signature(ds, exe)
-        return cls.load(Path(cache_dir) / f'katalog-{sig[:16]}.json', sig)
+        return cls.load(Path(cache_dir) / f'catalog-{sig[:16]}.json', sig)
 
     @classmethod
     def open(cls, ds: DataSource, cache_dir: Path, progress=None, exe: str | Path | None = None) -> 'Catalog':
         """Load from the cache or build anew and save."""
         sig = signature(ds, exe)
-        file = Path(cache_dir) / f'katalog-{sig[:16]}.json'
+        file = Path(cache_dir) / f'catalog-{sig[:16]}.json'
         cat = cls.load(file, sig)
         if cat is None:
             cat = cls.build(ds, progress, exe, cache_dir)
             cat.save(file)
-            for old in Path(cache_dir).glob('katalog-*.json'):     # remove outdated catalogues
-                if old != file:
-                    old.unlink(missing_ok=True)
+            for pattern in ('catalog-*.json', 'katalog-*.json'):   # remove outdated catalogues (katalog-: before
+                for old in Path(cache_dir).glob(pattern):             # 2026-11-22)
+                    if old != file:
+                        old.unlink(missing_ok=True)
         return cat
+
+
+def _model_info(path: str, d: bytes, head, own: bool = False) -> ModelInfo:
+    """The catalogue entry of one model file; a malformed file becomes an entry without sequences and with
+    ``head`` 'unreadable' instead of stopping the whole catalogue (review4 G-5)."""
+    c, ai = header_info(d)
+    try:
+        names = [s.name for s in mdl.read_sequences(d)]
+    except ValueError as e:
+        return ModelInfo(path, c, ai, [], header_cls=c, own=own, head='unreadable', head_error=str(e)[:200])
+    info = ModelInfo(path, c, ai, names, header_cls=c, own=own)
+    if head is None:
+        info.head = 'no-exe'
+    else:
+        _read_head(head, d, info)
+    return info
+
+
+def _default_sequence(info: ModelInfo) -> None:
+    """Set the default object's "Cur Sequence" again once the level use is counted: ``_read_head`` runs before
+    the levels are read, when ``default_sequence``'s third rule (the most frequent sequence in the levels) had
+    nothing to go on (review 5 P56-4)."""
+    if info.head != 'default' or not info.default:
+        return
+    doc = tf.loads(info.default)
+    node = next(c for c in doc.children if isinstance(c, tf.Node))
+    if node.item('Cur Sequence') is not None and node.get('Cur Sequence') != info.default_sequence:
+        node.set('Cur Sequence', info.default_sequence)
+        info.default = tf.dumps(doc)
 
 
 def _read_head(head, data: bytes, info: ModelInfo) -> None:

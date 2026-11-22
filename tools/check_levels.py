@@ -18,7 +18,7 @@ from collections import Counter
 from pathlib import Path
 
 from _common import data_arg, open_data
-from zaxtools import levelcheck as lc, mdl, textformat as tf
+from zaxtools import levelcheck as lc, mdl, safepath, textformat as tf
 from zaxtools.datasource import DataSource
 from zaxtools.exeschema import Schema, find_exe
 from zaxtools.level import Level
@@ -121,8 +121,12 @@ def _patch_model(ds: DataSource, schema, src: str, out_data: Path, name: str, ho
 
 def broken_cases(ds: DataSource, schema, exe, out: Path) -> bool:
     out_data = out / 'Data'
-    if ds.root.resolve() in (out_data.resolve(), *out_data.resolve().parents):
-        sys.exit('OUT must not be the game data')
+    # the data folder itself, or the game folder of a Data.dat (an unpacked Data/ there wins over the archive), and
+    # never into any game installation (review 5 P55-5: OUT = the folder of the Data.dat passed)
+    game = ds.root if ds.root.is_dir() else ds.root.parent
+    if ds.root.resolve() in (out_data.resolve(), *out_data.resolve().parents) or \
+            safepath.is_game_data(out_data, roots=[game]):
+        sys.exit('OUT must not be the game data or lie in a game folder')
     cases = []          # (name, expected check, level)
 
     def case(name, check, edit):
@@ -250,7 +254,9 @@ def broken_cases(ds: DataSource, schema, exe, out: Path) -> bool:
             case(name, check, edit)
         except StopIteration:
             print(f'[SKIP] {name}: the base level has nothing to break')
-    # the broken models live in OUT/Data: check against the game data plus OUT/Data
+    # the broken models live in OUT/Data: check against the game data plus OUT/Data (which exists even when no model
+    # case wrote a file, review 5 P55-5)
+    out_data.mkdir(parents=True, exist_ok=True)
     ctx = lc.Context(_Overlay(ds, out_data), schema, exe)
     ok = True
     for name, check, lv in cases:

@@ -61,7 +61,7 @@ CHECKS = {
     'dialog-voice': ('warning', QT_TRANSLATE_NOOP('levelcheck', 'Dialogue line without voice file')),
     'dialog-portrait': ('warning', QT_TRANSLATE_NOOP('levelcheck', 'Speaker without portrait')),
     'current-frame': ('error', QT_TRANSLATE_NOOP('levelcheck', 'Current Frame not finite')),
-    'patrol-random-hang': ('error', QT_TRANSLATE_NOOP('levelcheck', 'Random path with only one point')),
+    'patrol-random-hang': ('error', QT_TRANSLATE_NOOP('levelcheck', 'Random path with at most one point to choose')),
     'shield-non-character': ('error', QT_TRANSLATE_NOOP('levelcheck', 'CShieldAI on a non-character')),
     'sethome-non-character': ('error', QT_TRANSLATE_NOOP('levelcheck', 'CSetHomeAction on a non-character')),
     'file-name-tilde': ('error', QT_TRANSLATE_NOOP('levelcheck', '“~” in the file name')),
@@ -328,9 +328,7 @@ class Context:
             if not self._exists(rel):
                 self._way_models[key] = None
             else:
-                head = self.model_head(path)
-                act = None if head is None else [o.cls for o in (head.values.get('Activity') or []) if o is not None]
-                self._way_models[key] = waymap.ModelData(waymap.poly_from_model(self._read(rel)), act)
+                self._way_models[key] = waymap.model_data(self._read(rel), lambda _data: self.model_head(path))
         return self._way_models[key]
 
     def way_map(self, level: Level):
@@ -350,7 +348,7 @@ class Context:
 
     def dialog_labels(self, script: str) -> set[str] | None:
         s = self.dialog_script(script)
-        return None if s is None else {name.strip().lower() for name in s.labels()}
+        return None if s is None else {rds.fold(name.strip()) for name in s.labels()}
 
     def item_defaults(self) -> dict[str, str]:
         """Item definition (lower case) -> class of its "Default Inventory Item" ('' = none)."""
@@ -707,7 +705,7 @@ def _dialog(node: tf.Node, part, prefix: str, ctx: Context, add) -> None:
         add('dialog-missing', translate('levelcheck', 'The dialogue script “Levels/{script}.RDS” does not exist: the '
                                                       'game looks for it and exits.').format(script=script),
             src, part, _label(prefix, 'Script'), script)
-    elif line and line.strip().lower() not in labels:
+    elif line and rds.fold(line.strip()) not in labels:
         add('dialog-missing', translate('levelcheck', 'The line “:{line}” is not in the script “{script}”: the game '
                                                       'looks for it and exits.').format(line=line, script=script),
             src, part, _label(prefix, 'Line'), line)
@@ -750,8 +748,9 @@ def _fidget(node: tf.Node, part, prefix: str, ctx: Context, add) -> None:
 
 
 def _patrol(node: tf.Node, part, prefix: str, level: Level, add) -> None:
-    """CPatrolPathAI: with "Random" and only one point to choose (count - 1, less one with "Ignore last
-    point") the loop that wants another point never ends."""
+    """CPatrolPathAI: with "Random" and at most one point to choose (count - 1, less one with "Ignore last
+    point") the loop that wants another point never ends: Random_Below 0x55c470 returns 0 for 0 as for 1, and a
+    negative count (a DWORD) reads past the path's points (review 5 P60-1)."""
     if (node.get('Order') or '').strip().lower() != 'random':
         return
     name = (node.get('Path Poly') or '').strip()
@@ -759,8 +758,8 @@ def _patrol(node: tf.Node, part, prefix: str, level: Level, add) -> None:
     if poly is None:
         return
     choose = len(poly.polygon) - 1 - (1 if node.get('Ignore last point') not in (None, '0', '') else 0)
-    if choose == 1:
-        add('patrol-random-hang', translate('levelcheck', '“Random” on the path “{path}” with only one point to '
+    if choose <= 1:
+        add('patrol-random-hang', translate('levelcheck', '“Random” on the path “{path}” with at most one point to '
                                                           'choose ({points} points): the loop that looks for another '
                                                           'point never ends (the game hangs).').format(
             path=name, points=len(poly.polygon)),

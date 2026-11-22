@@ -36,6 +36,7 @@ from PIL import Image, ImageDraw
 
 from . import anim, frm, mdl, plasma, seq
 from .datasource import DataSource
+from .exeschema import c_atoi
 from .level import Level
 
 EDITOR_PREFIX = 'Editor/'
@@ -56,8 +57,11 @@ class Assets:
     def texture(self, name: str) -> np.ndarray | None:
         if name not in self._tex:
             rel = f'Cache/Textures/{name}.frm16'
-            self._tex[name] = (frm.decode(self.ds.read(rel))[0][..., :3].astype(np.float32)
-                               if self.ds.exists(rel) else None)
+            try:
+                self._tex[name] = (frm.decode(self.ds.read(rel))[0][..., :3].astype(np.float32)
+                                   if self.ds.exists(rel) else None)
+            except ValueError:          # a malformed texture draws like a missing one (review4 G-5)
+                self._tex[name] = None
         return self._tex[name]
 
     def animation(self, name: str) -> tuple[list[np.ndarray], float] | None:
@@ -66,8 +70,11 @@ class Assets:
             rel = f'Cache/Animated Textures/{name}.seq16'
             a = None
             if self.ds.exists(rel):
-                sq = seq.load(self.ds.read(rel))
-                frames = [f.rgba[..., :3].astype(np.float32) for f in sq.frames if f is not None]
+                try:
+                    sq = seq.load(self.ds.read(rel))
+                except ValueError:      # a malformed file draws like a missing one (review4 G-5)
+                    sq = None
+                frames = [f.rgba[..., :3].astype(np.float32) for f in sq.frames if f is not None] if sq else []
                 a = (frames, sq.fps) if frames else None
             self._anim[name] = a
         return self._anim[name]
@@ -76,10 +83,13 @@ class Assets:
         if name not in self._mdl:
             rel = f'Cache/Models/{name}.mdl16'
             own = next((r / rel for r in self.own_roots if (r / rel).is_file()), None)
-            if own is not None:
-                self._mdl[name] = mdl.load(own.read_bytes(), name)
-            else:
-                self._mdl[name] = mdl.load(self.ds.read(rel), name) if self.ds.exists(rel) else None
+            try:
+                if own is not None:
+                    self._mdl[name] = mdl.load(own.read_bytes(), name)
+                else:
+                    self._mdl[name] = mdl.load(self.ds.read(rel), name) if self.ds.exists(rel) else None
+            except ValueError:          # a malformed model draws like a missing one, the level still renders (review4
+                self._mdl[name] = None  # G-5; the level check reports the file)
         return self._mdl[name]
 
     def forget(self, name: str) -> None:
@@ -133,8 +143,12 @@ def surface_kind(p) -> str:
 
 
 def on_ground(p) -> bool:
-    """"On Ground" of a polygon; 1 without the field, like the constructor in Zax.exe (0x55d880)."""
-    return p.get('On Ground', '1') != '0'
+    """"On Ground" of a polygon; 1 without the field, like the constructor in Zax.exe (0x55d880). Both polygon
+    fields are read with the game's integer reader (``exeschema.c_atoi``, as ``game_read`` does for the int and
+    bool kinds), so "abc" or "1e400" no longer stop the drawing and "00" is 0 (review 5 P62-5) [assumption: an empty
+    value is read as 0 too]."""
+    v = p.get('On Ground')
+    return True if v is None else c_atoi(v) != 0
 
 
 def surface_key(p) -> tuple[int, float]:
@@ -143,7 +157,7 @@ def surface_key(p) -> tuple[int, float]:
     objects - "On Ground=1" below the shadows and ground layers, otherwise below the objects
     (0x55dd90)."""
     xs, ys = zip(*p.polygon)
-    return math.ceil(max(ys)) + int(float(p.get('YSort') or 0)), min(xs)
+    return math.ceil(max(ys)) + c_atoi(p.get('YSort') or '0'), min(xs)
 
 
 def surface_texture(p, assets: Assets) -> np.ndarray | None:

@@ -89,7 +89,11 @@ class Node:
 
     # --- Changes --------------------------------------------------------
     def set(self, key: str, value: str) -> None:
-        """Change the value of an existing entry or append the entry."""
+        """Change the value of an existing entry or append the entry. ValueError for a line end in the key or the value
+        or a "=" in the key: they would write further lines or keys into the file (review 5 P62-3)."""
+        value = str(value)
+        if '\r' in value or '\n' in value or '\r' in key or '\n' in key or '=' in key:
+            raise ValueError(f'{key!r}: line end in a value, or "=" in a key')
         it = self.item(key)
         if it is None:
             self.children.append(Entry(key, str(value)))

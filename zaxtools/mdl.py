@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import frm
+from .malformed import reader
 
 SEQ_TAG = struct.pack('<ff', 27.0, 758.0)
 TWO_PI = struct.unpack('<f', struct.pack('<f', 2 * math.pi))[0]    # constant of the exe (float)
@@ -199,6 +200,11 @@ def rotation_index(angle: float, rotations: int, offset: float = 0.0, rng: float
     """
     if rotations <= 1:
         return 0
+    if not (math.isfinite(rng) and math.isfinite(offset) and math.isfinite(angle)) or _f32(rng) == 0:
+        # a zeroed or non-finite Rotational Range (foreign models only; every shipped multi-rotation sequence has
+        # a positive one): the first rotation instead of a ZeroDivisionError while drawing (review 5 P61-5;
+        # what the exe's x87 code draws then: [assumption] not checked)
+        return 0
     lo, hi = _f32(offset), _f32(offset + rng)
     a = _f32(angle)                     # the exe stores angles as float
     if a < lo:
@@ -232,15 +238,22 @@ def _seq_name(d: bytes, o: int) -> str:
     return ''
 
 
+@reader
 def read_sequences(d: bytes) -> list[Sequence]:
     out = []
     for m in re.finditer(re.escape(SEQ_TAG), d):
         o = m.start()
         _, total = struct.unpack_from('<iI', d, o + 8)
+        if total > len(d) - o:
+            # every slot takes at least one byte after the tag (00 for an empty frame); a larger count would size
+            # a list of up to 4 G slots before anything checks it (review4 G-2, review 5 L1-1)
+            raise ValueError(f'sequence at offset {o}: {total} frames do not fit into the {len(d) - o} bytes after it')
         fps = struct.unpack_from('<f', d, o + 16)[0]
         sl = struct.unpack_from('<I', d, o + 21)[0]
         mode = d[o + 25:o + 25 + sl].decode('latin-1')
         rot, sort_y, per = struct.unpack_from('<IiI', d, o + 25 + sl + 12)
+        if max(rot, per) > max(total, 1):   # rotations x frames per rotation = total in all 42,023 shipped sequences
+            raise ValueError(f'sequence at offset {o}: {rot} rotations / {per} frames per rotation for {total} frames')
         flags = d[o + 25 + sl + 24:o + 25 + sl + 30]
         r_off, r_rng, sort_off, n = struct.unpack_from('<ffiI', d, o + 25 + sl + 34)
         cuts, p = [], o + 25 + sl + 50
@@ -281,17 +294,20 @@ def _try_frame(d: bytes, o: int, palette):
     return Frame(rgba, hd.hot_x, hd.hot_y, o, d if hd.bpp == 16 else None), end
 
 
+@reader
 def load(data: bytes, name: str = '', palette: np.ndarray | None = None) -> Model:
     """Load a model. For .mdl (8 bit) pass ``palette`` (frm.load_palette)."""
     seqs = read_sequences(data)
     frames, ends = [], {}
-    pos = 0
+    pos = pixels = 0
     for m in _FRAME_RE.finditer(data):
         o = m.start() + 6 if m.group(0).startswith(b'FRAME') else m.start()
         if o < pos:
             continue
         r = _try_frame(data, o, palette)
         if r:
+            pixels += r[0].rgba.shape[0] * r[0].rgba.shape[1]
+            frm.check_budget(pixels, frm.MAX_MODEL_PIXELS, 'model')
             frames.append(r[0])
             pos = ends[r[0].offset] = r[1]
     bounds = [s.offset for s in seqs] + [len(data)]

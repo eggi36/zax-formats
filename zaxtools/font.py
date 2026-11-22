@@ -27,6 +27,7 @@ import numpy as np
 
 from . import frm
 from .mdl import Frame
+from .malformed import reader
 
 TAG = struct.pack('<ff', 27.0, 654.0)
 
@@ -70,6 +71,7 @@ class Font:
         return out
 
 
+@reader
 def load(data: bytes, palette: np.ndarray | None = None) -> Font:
     """Read a font. For .seq (8 bit) pass ``palette`` (frm.load_palette)."""
     if data[:8] != TAG:
@@ -86,6 +88,7 @@ def load(data: bytes, palette: np.ndarray | None = None) -> Font:
     if last - first + 1 != total:
         raise ValueError(f'character range {first}..{last} does not match {total} frames')
     out = Font(first, last, bool(fixed), box, unknown, flags, offset)
+    pixels = 0
     for i in range(total):
         marker = data[o]
         o += 1
@@ -94,8 +97,10 @@ def load(data: bytes, palette: np.ndarray | None = None) -> Font:
         if marker != 1:
             raise ValueError(f'unexpected frame marker {marker} at offset {o - 1}')
         rgba, hd, end = frm.decode(data, o, palette)
+        pixels += hd.width * hd.height
+        frm.check_budget(pixels, frm.MAX_FILE_PIXELS)
         out.glyphs[first + i] = Frame(rgba, hd.hot_x, hd.hot_y, o)
-        o = end if hd.rle or end == len(data) else end + 4 * hd.height
+        o = end
     if o != len(data):
         raise ValueError(f'{len(data) - o} bytes after the last character')
     return out

@@ -31,6 +31,7 @@ import struct
 from dataclasses import dataclass, field
 
 from . import frm, seq
+from .malformed import reader
 
 MODEL_SIG = 403.0
 SEQ_SIG = 758.0
@@ -135,6 +136,7 @@ class _R:
         return s
 
 
+@reader
 def parse(data: bytes, head) -> ModelFile:
     """Every part of a model file; ``head`` a ``modelhead.ModelHead`` (the exe's schema: it finds the header's end
     and reads the frame triggers). Raises ValueError for a file that does not end where its parts do."""

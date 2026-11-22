@@ -113,9 +113,15 @@ def check(spec: ImportSpec) -> list[str]:
         out.append(translate('imageimport', 'unknown kind “{kind}”').format(kind=spec.kind))
     if not spec.name.strip() or any(c in spec.name for c in '/\\:*?"<>|~'):
         out.append(translate('imageimport', 'the name is empty or contains one of / \\ : * ? " < > | ~'))
+    elif safepath.new_name_problem(spec.name):
+        out.append(safepath.new_name_problem(spec.name))
     folder_bad = (spec.folder.strip('/') and safepath.relative_problem(spec.folder.strip('/')) is not None)
     if '~' in spec.folder or '..' in spec.folder.split('/') or '\\' in spec.folder or folder_bad:
         out.append(translate('imageimport', 'the folder contains “~”, “..”, “:”, an empty folder name or a backslash'))
+    else:
+        bad = next((w for seg in spec.folder.strip('/').split('/') if seg and (w := safepath.new_name_problem(seg))), None)
+        if bad:
+            out.append(bad)
     if not spec.images:
         out.append(translate('imageimport', 'no image'))
     elif spec.kind == 'image' and len(spec.images) > 1:

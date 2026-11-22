@@ -107,11 +107,13 @@ class Script:
         return [(NONE_ITEM, '')] + [(it.name, it.text()) for it in self.items]
 
     def find(self, name: str) -> Item | None:
-        """The item the game takes for ``Line=name``: the first of that name, any case [assumption: the
-        list's Find compares like ``_stricmp`` in file order; all 646 dialogue actions of the originals
-        find their item exactly]."""
-        low = name.lower()
-        return next((it for it in self.items if it.name.lower() == low), None)
+        """The item the game takes for ``Line=name``: the first of that name, A-Z in any case. The lookup is
+        ZNamedList::Find 0x591bd0 (``_stricmp`` in list order; fieldhelp CDialogLine "Name") [confirmed: code; verified:
+        all 646 dialogue actions of the originals find their item exactly], and ``_stricmp`` folds only A-Z: the exe
+        has no ``setlocale`` and stays in the "C" locale [confirmed: zax-decomp/docs/DECOMPILATION.md, C runtime
+        table], so "Äpfel" and "äpfel" are two labels (review 5 P62-6; ``str.lower`` folded them)."""
+        low = fold(name)
+        return next((it for it in self.items if fold(it.name) == low), None)
 
     def labels(self) -> list[str]:
         return [it.name for it in self.items]
@@ -126,6 +128,13 @@ class Script:
         lines = [Line(t) for t in _text_lines(text)]
         if lines and not tail and old and old[-1].end == '':
             lines[-1].end = ''        # the file ended without a line end: keep it so
+        elif lines and not tail and not old:
+            # the label (or its last comment) ends the file without a line end: the new lines must not be glued
+            # onto it (review 5 P62-1: ":B" + "Hi" became the label "BHi")
+            before = comments[-1] if comments else it
+            if before.end == '':
+                before.end = EOL
+                lines[-1].end = ''
         it.body = comments + lines + tail
 
     def add(self, name: str, text: str = '') -> Item:
@@ -165,6 +174,14 @@ class Script:
         if it is None:
             raise KeyError(name)
         self.items.remove(it)
+
+
+_ASCII_LOWER = str.maketrans('ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')
+
+
+def fold(name: str) -> str:
+    """Case folding as ``_stricmp`` in the "C" locale: A-Z only."""
+    return name.translate(_ASCII_LOWER)
 
 
 def check_name(name: str) -> None:

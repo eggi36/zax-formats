@@ -16,19 +16,21 @@ passed as a class variable (``mov reg, [classVar]``) or via a getter function
 What the exe does not reveal comes from the text files of the game data (``text_hints``): the
 class of embedded objects, the keys of array elements and the element class of named arrays.
 
-The addresses apply to the retail version (Zax.exe, 2,572,288 bytes). ``extract`` checks that.
+The addresses apply to the retail version (Zax.exe, 2,572,288 bytes). ``extract`` checks that the classes are where
+it expects them and that the field constructors it finds are the known ones (``UNKNOWN_ENC_LIMIT``).
 Needs ``capstone`` and ``pefile`` (only for generating; the result is saved as JSON).
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import struct
 from collections import Counter
 from pathlib import Path
 
-from . import textformat as tf
+from . import safepath, textformat as tf
 from .datasource import DataSource
 from .i18n import translate
 
@@ -315,7 +317,17 @@ def extract(exe_path: str | Path) -> dict:
         }
     if 'CLayerPart' not in out or 'CModel' not in out:
         raise ValueError('Zax.exe does not have the expected layout (different version?)')
+    # a build whose class registration sits at the same addresses but whose field constructors moved (the German
+    # CD's 1305: 1,506 of 1,639 fields) gives a schema without kinds, limits and defaults; refuse it so callers fall
+    # back to "no exe" (review 5 P57-1). The 1308 retail and English exes have 22 such fields (1.3 %).
+    fields = [f for c in out.values() for f in c['fields']]
+    unknown = sum(1 for f in fields if f['enc'].startswith('0x'))
+    if fields and unknown > UNKNOWN_ENC_LIMIT * len(fields):
+        raise ValueError(f'Zax.exe: {unknown} of {len(fields)} fields have an unknown field type (different version?)')
     return out
+
+
+UNKNOWN_ENC_LIMIT = 0.05
 
 
 def _f32(bits: int) -> float:
@@ -429,6 +441,18 @@ def flag_names(ds: DataSource, list_id: int) -> list[str] | None:
     if list_id not in FLAG_LISTS:
         return None
     folder, ext = FLAG_LISTS[list_id]
+    names = _flag_files(ds, folder, ext)
+    if not names and list_id in DEFINITION_LISTS:
+        # ZDefinitionList::Init 0x46a940/0x477220: without a .TXT file in the folder the "property" files of
+        # "Cache/<folder>" [confirmed: zax-decomp/reimpl/src/definitions.cpp] (review 5 P57-3)
+        names = _flag_files(ds, 'Cache/' + folder, '.property')
+    return sorted(names, key=str.lower)
+
+
+DEFINITION_LISTS = (0x6bd140, 0x6bd760)        # g_CategoryList, g_DamageTypeList (ZDefinitionList)
+
+
+def _flag_files(ds: DataSource, folder: str, ext: str) -> list[str]:
     pre = folder.lower() + '/'
     names = []
     for f in ds.list(pre, ext):
@@ -440,7 +464,7 @@ def flag_names(ds: DataSource, list_id: int) -> list[str] | None:
         if stem.startswith('-'):
             stem = stem[1:]
         names.append('/'.join(parts[:-1] + [stem]))
-    return sorted(names, key=str.lower)
+    return names
 
 
 # --- Field values as the game reads and writes them as text ----------------------------------------------
@@ -474,8 +498,13 @@ def _to_f32(v: float) -> float:
 def _g(v: float) -> str:
     """%g as the game's C runtime formats floats and doubles: 6 significant digits, an exponent with at
     least three digits ("1e+014", as in the game data)."""
-    if v != v or abs(v) == float('inf'):
-        return '-1.#IND' if v != v else ('1.#INF' if v > 0 else '-1.#INF')
+    if v != v:
+        # MSVC: the x87 "indefinite" (0xfff8000000000000, what an invalid operation gives) as -1.#IND, any other
+        # quiet NaN as 1.#QNAN with its sign (review 5 P57-4: every NaN was -1.#IND)
+        bits = struct.unpack('<Q', struct.pack('<d', v))[0]
+        return '-1.#IND' if bits == 0xfff8000000000000 else ('-' if bits >> 63 else '') + '1.#QNAN'
+    if abs(v) == float('inf'):
+        return '1.#INF' if v > 0 else '-1.#INF'
     t = f'{v:g}'
     if 'e' in t:
         mant, ex = t.split('e')
@@ -492,7 +521,9 @@ def value_text(f: dict, v) -> str | None:
         u = v & 0xffffffff
         return next((n for k, n in f['enum'] if k & 0xffffffff == u), str(u))          # name, else %u
     if kind in ('float', 'double'):
-        return next((n for k, n in f['enum'] if k == v), _g(v))                         # name, else %g
+        # name, else %g; the game's compare (slot 27, fcomp) counts unordered as equal, so a NaN takes the first
+        # name (review 5 P57-4)
+        return next((n for k, n in f['enum'] if k == v or k != k or v != v), _g(v))
     if kind == 'byte':
         return str(v & 0xff)
     if kind == 'bit':
@@ -538,7 +569,7 @@ def game_read(f: dict, text: str):
         hit = next((k for k, n in f['enum'] if n.lower() == text.lower()), None)
         if hit is not None:
             return hit
-        if v < f['min']:
+        if v < f['min'] or v != v:      # fcomp(f, min) & C0 is set on unordered: a NaN stores min (review 5 P57-4)
             return f['min']
         if not v <= f['max']:
             return f['max']
@@ -646,9 +677,12 @@ def limits_text(f: dict) -> str:
     return '  ·  '.join(out)
 
 
+TEXT_SUFFIXES = ('.zax', '.txt', '.zgt', '.can', '.sty', '.dificulty', '.quips', '.foo')
+
+
 def text_hints(ds: DataSource) -> dict:
     """From all text files: class of embedded objects, element and counter keys of arrays."""
-    suffixes = ('.zax', '.txt', '.zgt', '.can', '.sty', '.dificulty', '.quips', '.foo')
+    suffixes = TEXT_SUFFIXES
     obj: dict[str, Counter] = {}        # "Class.Field" -> Counter(class of the sub-object)
     elem: dict[str, Counter] = {}       # "Class.Field" -> Counter(element key)
     elem_cls: dict[str, Counter] = {}   # "Class.Field" -> Counter(element class)
@@ -828,16 +862,37 @@ class Schema:
         """Load from the cache or generate from exe + text files (a few seconds)."""
         fid = file_id(exe_path)
         file = Path(cache_dir) / f'schema-{fid[:16]}.json'
+        did = data_id(ds)
         try:
             data = json.loads(file.read_text(encoding='utf-8'))
-            if data.get('version') == VERSION and data.get('exe') == fid:
+            if data.get('version') == VERSION and data.get('exe') == fid and data.get('data') == did:
                 return cls(data)
         except (OSError, ValueError):
             pass
         sch = cls.build(exe_path, ds)
+        sch.data['data'] = did
         file.parent.mkdir(parents=True, exist_ok=True)
-        file.write_text(json.dumps(sch.data), encoding='utf-8')
+        safepath.atomic_write(file, json.dumps(sch.data).encode('utf-8'))
         return sch
+
+
+def data_id(ds: DataSource) -> str:
+    """Signature of the text files ``text_hints`` reads (half of a schema comes from them): the archive's or each
+    file's size and time, and the language pack's. The cache record keeps it, so another data folder with the same
+    Zax.exe builds its own hints instead of reusing the first one's (review 5 P57-2)."""
+    h = hashlib.sha1(str(Path(ds.root).resolve()).encode())
+    if ds._zip is not None:
+        st = os.stat(ds.root)
+        h.update(f'zip|{st.st_size}|{st.st_mtime_ns}'.encode())
+    else:
+        for rel in ds.list('', ''):
+            if rel.lower().endswith(TEXT_SUFFIXES) and not ds.in_pack(rel):
+                st = os.stat(ds.resolve(rel))
+                h.update(f'{rel}|{st.st_size}|{st.st_mtime_ns}\n'.encode())
+    if ds.language_pack is not None:
+        st = os.stat(ds.language_pack)
+        h.update(f'pack|{Path(ds.language_pack).resolve()}|{st.st_size}|{st.st_mtime_ns}'.encode())
+    return h.hexdigest()
 
 
 def find_exe(ds: DataSource) -> Path | None:

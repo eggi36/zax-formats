@@ -36,6 +36,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .malformed import reader
+
 HEADER = 36
 
 
@@ -61,8 +63,20 @@ class FrameHeader:
 # the largest frame read (pixels): far above the game's images (the import takes up to 2048 x 2048), far below what a
 # forged 65535 x 65535 header would allocate
 MAX_PIXELS = 4096 * 4096
+# Budgets per file (review4 G-6): the per-frame cap alone lets an image sequence of many all-transparent
+# 4096 x 4096 RLE frames (151 KB each, 7 KB deflated) hold tens of GB once decoded. The shipped maxima of all
+# editions [verified 2026-11-22]: 3.3 M pixels in one image sequence, 33 M in one model file (Om.mdl16).
+MAX_FILE_PIXELS = 64 << 20          # .seq/.seq16 and fonts
+MAX_MODEL_PIXELS = 256 << 20        # .mdl16/.mdl
 
 
+def check_budget(total: int, limit: int, what: str = 'file') -> None:
+    """ValueError once the decoded frames of one file exceed ``limit`` pixels."""
+    if total > limit:
+        raise ValueError(f'the {what} decodes to more than {limit} pixels')
+
+
+@reader
 def read_header(d: bytes, off: int = 0) -> FrameHeader:
     t, bpp, hx, hy, w, h, _, flags, _ = struct.unpack_from('<BBhhHHHHH', d, off)
     if t != 0x31:
@@ -97,6 +111,7 @@ OLD_TYPE = 0x25
 OLD_HEADER = 42
 
 
+@reader
 def read_old_header(d: bytes, off: int = 0) -> FrameHeader:
     t, bpp, _, hx, hy, w, h = struct.unpack_from('<BBHhhHH', d, off)
     if t != OLD_TYPE:
@@ -107,6 +122,7 @@ def read_old_header(d: bytes, off: int = 0) -> FrameHeader:
     return FrameHeader(bpp, hx, hy, w, h, 0, size, 0, 0, 0, 0)
 
 
+@reader
 def decode_old(d: bytes, off: int = 0, palette: np.ndarray | None = None):
     """Decode an old frame (type 0x25, see OLD_TYPE) -> (RGBA image, FrameHeader, end offset)."""
     hd = read_old_header(d, off)
@@ -197,6 +213,7 @@ def decode_rle(blk: bytes, table, w: int, h: int, bytes_per_value: int):
     return vals, opaque
 
 
+@reader
 def decode(d: bytes, off: int = 0, palette: np.ndarray | None = None):
     """Decode the frame at ``off``.
 
@@ -221,9 +238,9 @@ def decode(d: bytes, off: int = 0, palette: np.ndarray | None = None):
         dtype = np.uint8 if bpv == 1 else np.dtype('<u2')
         vals = np.frombuffer(blk[:w * h * bpv], dtype).reshape(h, w)
         opaque = np.ones((h, w), bool)
-        end = start + hd.size
-        if len(d) - end == 4 * h:      # .frm files have a row table here too
-            end += 4 * h
+        end = start + hd.size + 4 * h   # a raw block has its row table too, as every writer puts it (frame_end);
+        # until 2026-11-22 it was counted only when it ended the buffer, so each caller added it again and the
+        # alpha/edge blocks of a raw frame were read 4 * h bytes early (review 5 P60-3)
     rgba = np.zeros((h, w, 4), np.uint8)
     rgba[..., :3] = _to_rgb(vals, bpv, palette)
     rgba[..., 3] = opaque * 255
@@ -300,6 +317,7 @@ class Layers16:
     span_len: np.ndarray
 
 
+@reader
 def layers16(d: bytes, off: int = 0) -> Layers16 | None:
     """The blocks of the 16-bit frame at ``off`` (None for other frames)."""
     hd = read_header(d, off)
@@ -427,6 +445,7 @@ def nearest_index(rgb: np.ndarray, palette: np.ndarray) -> np.ndarray:
     return out.reshape(rgb.shape[:2])
 
 
+@reader
 def load_palette(data: bytes) -> np.ndarray:
     """GamePalette.pal: 256 entries of 3 bytes each in the order B, G, R."""
     return np.frombuffer(data[:768], np.uint8).reshape(256, 3)[:, ::-1].copy()
@@ -609,6 +628,7 @@ def band_alpha8(blocks: list[np.ndarray]) -> np.ndarray:
     return alpha
 
 
+@reader
 def blocks(d: bytes, off: int = 0) -> tuple[FrameHeader, list, int]:
     """The five blocks of a frame decoded each as an image of its own (a raw frame: its pixels): (header, [(values, mask) or
     None for pixel, +20, +24, alpha, edge], end offset). For 16-bit frames the alpha block is not an image
@@ -682,6 +702,7 @@ class FrameValues:
     field10: int
 
 
+@reader
 def values(d: bytes, off: int = 0) -> FrameValues:
     """The values of the frame at ``off`` for encode: every pixel's value from its block and an alpha
     that puts it into the same block again (16 bit: 255 or the edge alpha; 8 bit: band_alpha8). Raises
@@ -719,6 +740,7 @@ def encode(v: FrameValues) -> bytes:
     return encode8(v.values, v.alpha, v.hot, v.field10)
 
 
+@reader
 def frame_end(d: bytes, off: int = 0) -> int:
     """The offset after the frame at ``off`` (header, every block and its row table)."""
     hd = read_header(d, off)

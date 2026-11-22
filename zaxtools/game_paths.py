@@ -211,6 +211,10 @@ def game_dir(build=REFERENCE) -> Path:
     if not found:
         raise GamePathError(f'no game folder of {key} below {base} ({len(scanned)} folders with a Zax.exe scanned); '
                             f'looked for {looked}. {_how_to_set(key)}')
+    if ref_data and len(found) == 1 and _sha256(_find_ci(found[0], 'DATA.dat')) != ref_data[1]:
+        # one candidate is checked as fully as several (review 5 P60-2: a same-size but other DATA.dat, a re-zipped
+        # or byte-patched archive, became the reference data without a word); one read of the archive per process
+        raise GamePathError(f'{key}: DATA.dat of the right size but another SHA-256 in {found[0]}. {_how_to_set(key)}')
     if len(found) > 1:
         contents = {d: _content(d) for d in found}
         if len(set(contents.values())) == 1 and _find_ci(found[0], 'DATA.dat'):

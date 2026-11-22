@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from . import textformat as tf
 from . import way
 from .level import Level
+from .malformed import reader
 
 _F = struct.Struct('<f')
 
@@ -301,9 +302,11 @@ def poly_from_model(data: bytes) -> Poly | None:
     """The model's "Bounds Poly" (CModel +0x78): the only POLY2D block of the .mdl16 header (header
     "POLY2D\\0", the byte 7, the count, the points; 0x545fa0). None when there is none."""
     i = data.find(b'POLY2D\0')
-    if i < 0 or data[i + 7] != 7:
+    if i < 0 or i + 12 > len(data) or data[i + 7] != 7:
         return None
     n = struct.unpack_from('<I', data, i + 8)[0]
+    if n > (len(data) - i - 12) // 8:       # a damaged count (review 5 P63-3: struct.error/IndexError before)
+        raise ValueError(f'Bounds Poly: {n} points do not fit into the file')
     v = struct.unpack_from(f'<{2 * n}f', data, i + 12)
     p = Poly()
     p.xs, p.ys = list(v[0::2]), list(v[1::2])
@@ -582,6 +585,9 @@ class _Quad:
         return out
 
 
+BIG_BLOCKER = 4096       # cells (a 4096 x 4096 level has 4,096)
+
+
 class Builder:
     def __init__(self, inputs: Inputs, min_dist: float = MIN_DIST, max_connect: float = MAX_CONNECT):
         self.inputs = inputs
@@ -599,9 +605,16 @@ class Builder:
         self.origin: list[int] = []      # per way point: the index in inputs.polygons whose outline made it
         self._current = -1
         self.points_tested = 0
-        # blockers by 64-pixel cells of their rectangle
+        # blockers by 64-pixel cells of their rectangle (a Python-only index: the game's FindRect clamps to its grid);
+        # a blocker over more than BIG_BLOCKER cells (a typo like 3000000 in a polygon point) is tested by every
+        # query instead of filling millions of cells (review 5 P63-2: the build hung); the answer is the same, the
+        # same rectangle and hit tests run on the same blockers
         self.bcells: dict[tuple[int, int], list[Blocker]] = {}
+        self.big: list[Blocker] = []
         for b in inputs.blockers:
+            if ((b.rect[3] >> 6) - (b.rect[1] >> 6) + 1) * ((b.rect[2] >> 6) - (b.rect[0] >> 6) + 1) > BIG_BLOCKER:
+                self.big.append(b)
+                continue
             for cy in range(b.rect[1] >> 6, (b.rect[3] >> 6) + 1):
                 for cx in range(b.rect[0] >> 6, (b.rect[2] >> 6) + 1):
                     self.bcells.setdefault((cx, cy), []).append(b)
@@ -615,17 +628,18 @@ class Builder:
         if r3 - r1 == 0 or r2 - r0 == 0:
             return False        # FindRect gives nothing for a rectangle without width or height
         seen = set()
-        for cy in range(r1 >> 6, (r3 >> 6) + 1):
-            for cx in range(r0 >> 6, (r2 >> 6) + 1):
-                for b in self.bcells.get((cx, cy), ()):
-                    if id(b) in seen:
-                        continue
-                    seen.add(id(b))
-                    br = b.rect
-                    if not (max(r0, br[0]) < min(r2, br[2]) and max(r1, br[1]) < min(r3, br[3])):
-                        continue
-                    if b.shape.hits_circle(f32(x - b.px), f32(y - b.py), radius):
-                        return True
+        cells = (self.bcells.get((cx, cy), ()) for cy in range(r1 >> 6, (r3 >> 6) + 1)
+                 for cx in range(r0 >> 6, (r2 >> 6) + 1))
+        for group in (*cells, self.big):
+            for b in group:
+                if id(b) in seen:
+                    continue
+                seen.add(id(b))
+                br = b.rect
+                if not (max(r0, br[0]) < min(r2, br[2]) and max(r1, br[1]) < min(r3, br[3])):
+                    continue
+                if b.shape.hits_circle(f32(x - b.px), f32(y - b.py), radius):
+                    return True
         return False
 
     # 0x539350 without a mover: is a way point within the distance (in the half-open square of the query)?
@@ -818,8 +832,12 @@ class Result:
     origin: list[int]                    # per way point: the index in inputs.polygons that made it
 
 
+@reader
 def build(level: Level, model_data) -> Result:
-    """The level's way point map as the game calculates it. ``model_data(model path) -> ModelData|None``."""
+    """The level's way point map as the game calculates it. ``model_data(model path) -> ModelData|None``.
+    ValueError for numbers the build cannot use (a polygon point "1e39" is inf as a float, which the game's fistp
+    turns into 0x80000000 and Python's round refuses: review 5 P63-3; the caller then has no way point map, and the
+    editor removes the old one instead of keeping a stale file)."""
     inp = collect(level, model_data)
     b = Builder(inp)
     b.calculate()
@@ -898,17 +916,28 @@ def model_data_source(ds, head=None):
         rel = f'Cache/Models/{model}.mdl16'
         if not ds.exists(rel):
             return None
-        data = ds.read(rel)
-        bounds = poly_from_model(data)
-        activity = None
-        if head is not None:
-            try:
-                m = head.decode(data)
-                activity = [o.cls for o in (m.values.get('Activity') or []) if o is not None]
-            except Exception:       # noqa: BLE001 - unreadable header: activity stays unknown
-                activity = None
-        return ModelData(bounds, activity)
+        return model_data(ds.read(rel), None if head is None else head.decode)
     return get
+
+
+def model_data(data: bytes, decode=None) -> ModelData:
+    """``ModelData`` of one model file, shared by ``model_data_source`` and the level check's cached
+    ``Context.way_model`` (review 5 P63-8: two copies with different error handling before). ``decode(data)`` gives
+    the decoded header (``modelhead.Obj``) or None; an unreadable header leaves the activity unknown, an unreadable
+    "Bounds Poly" the bounds (the readers raise ValueError only, zaxtools.malformed)."""
+    try:
+        bounds = poly_from_model(data)
+    except ValueError:
+        bounds = None
+    activity = None
+    if decode is not None:
+        try:
+            m = decode(data)
+        except ValueError:
+            m = None
+        if m is not None:
+            activity = [o.cls for o in (m.values.get('Activity') or []) if o is not None]
+    return ModelData(bounds, activity)
 
 
 def dumps(level: Level, model_data) -> bytes:

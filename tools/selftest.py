@@ -45,10 +45,10 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     data_arg(p)
     p.add_argument('--quick', action='store_true')
-    a = p.parse_args()
-    quick = a.quick
-    ds = open_data(a)
-    sample = (lambda xs: xs[::max(1, len(xs) // 15)]) if a.quick else (lambda xs: xs)
+    args = p.parse_args()           # not "a": the sections reuse that name (review 5 P56-6)
+    quick = args.quick
+    ds = open_data(args)
+    sample = (lambda xs: xs[::max(1, len(xs) // 15)]) if quick else (lambda xs: xs)
     failures = 0
 
     def report(title, ok, total, extra=''):
@@ -133,8 +133,8 @@ def main():
         wx, wy = (px + 0.5 - m['X Offset']) / m['X Scale'], (py + 0.5 - m['Y Offset']) / m['Y Scale']
         x0, y0, x1, y1 = m['box']
         inside = (wx >= x0) & (wy >= y0) & (wx < x1) & (wy < y1)
-        bbox = lambda b: (lambda ys, xs: (xs.min(), ys.min(), xs.max(), ys.max()))(*np.nonzero(b))
-        ok += bbox(inside) == bbox(orig)
+        bbox = lambda b: (lambda ys, xs: (xs.min(), ys.min(), xs.max(), ys.max()) if len(xs) else None)(*np.nonzero(b))
+        ok += bbox(inside) == bbox(orig)        # an empty mask is one FAIL, not the end of the run (review 5 P56-6)
     report('Mini map mapping with Scale 0 as in the game (position of the original mini maps)', ok, n)
     # Let the game draw the mini map: placeholders of the wrong size next to the level's files
     ph = minimap.placeholder_files(nl)
@@ -152,7 +152,7 @@ def main():
         at['band middle'] += int((e == np.minimum(255, ((band + 0.5) * 256 / n).astype(int))).sum())
         at['points'] += e.size
     # all levels: band start 7.3 times as often as band middle; the --quick sample is lower
-    ok = (at['band start'] > (1 if a.quick else 5) * at['band middle'],
+    ok = (at['band start'] > (1 if quick else 5) * at['band middle'],
           not render.blend_weight(nl.elevations, len(nl.ground_textures), render.blending(nl))[1].any())
     report('Ground: originals paint at the band start, a new level shows the pure texture', sum(ok), len(ok), dict(at))
     # checksum of tiles that were compared byte for byte with the original code (emulator)
@@ -201,7 +201,7 @@ def main():
                 found[r.action] += 1
                 for _, n in r.names:
                     found['name there' if other is not None and idx[id(other)].resolve(n)[0] else 'name missing there'] += 1
-    if a.quick:  # the target levels are usually missing from the sample
+    if quick:  # the target levels are usually missing from the sample
         print(f'[---] Actions in other levels: only checked without --quick {dict(found)}')
     else:
         report('Actions in other levels: target level present', ok, total, dict(found))
@@ -212,7 +212,7 @@ def main():
         raw = ds.read(f)
         lv = Level.from_bytes(raw)
         index = links.LinkIndex(lv)
-        for p in [p for p in lv.parts if p.name and index.links_to(p)][::30 if a.quick else 3]:
+        for p in [p for p in lv.parts if p.name and index.links_to(p)][::30 if quick else 3]:
             mine = lambda n: any(t.node is p.node for t in index.resolve(n)[0])     # noqa: E731
             want = Counter((id(lk.source.node), lk.key) for lk in index.links_to(p))
             plan = links.rename_plan(lv, p, 'Renamed Test', index)
@@ -410,6 +410,7 @@ def main():
         report(f'Language pack {pack.name}', sum(checks), len(checks),
                {'files': len(dp.list()) - len(ds.list()), 'line': line[0][:40]})
         _check_rds(dp, zaxs, report, pack.name)
+        dp.close()
 
     # 6. Model headers (CModel + default object) - needs Zax.exe next to the game data
     exe = find_exe(ds)
@@ -607,6 +608,10 @@ def main():
     # as read-only, atomic writes, dialogue text lines that would change the script, forged frame/zip/.way sizes
     _check_safety(ds, report, sample)
 
+    # 8h. Malformed input and edge cases of the reviews (2026-11-21, batch RV-9): the readers raise ValueError only,
+    # no huge allocations, no hangs, the editing helpers keep identity and line structure
+    _check_malformed(ds, report)
+
     # 9. UI translations: the editor's, since the split of 2026-11-07 in zax-editor/tools/selftest_ui.py
 
     print(f'\nDone in {time.time() - t0:.0f} s, {failures} failures.')
@@ -789,8 +794,8 @@ def _check_encoder(ds, report, sample, pal):
     ok, bad = 0, []
     for f in files:
         d = ds.read(f)
-        s = seq.load(d, pal)
         try:
+            s = seq.load(d, pal)
             frames = [None if x is None else frm.encode(frm.values(d, x.offset)) for x in s.frames]
             good = seq.dumps(frames, s.fps_raw, s.mode, s.load_flags, s.offset) == d
         except ValueError as e:
@@ -887,8 +892,6 @@ def _check_game_minimap(ds, report, quick):
            ', '.join(f'{s * 100:.1f} %' for s in shares))
 
 
-# German UI text outside translate(): umlauts, German quotes or frequent German words (case-sensitive,
-# chosen so that English UI texts, class and field names do not hit them)
 def _changed_lines(a: bytes, b: bytes) -> list[str]:
     import difflib
     return [d for d in difflib.unified_diff(a.decode('latin-1').split('\r\n'), b.decode('latin-1').split('\r\n'),
@@ -926,7 +929,8 @@ def _check_rules_header(ds, report, zaxs):
         lv = Level.from_bytes(b)
         infos = header.team_infos(lv)
         teams += len(infos)
-        good = infos or tf.root(tf.load_bytes(b)).block('Team Info').get('Item Count') == '0'   # 01 TargDens
+        ti = tf.root(tf.load_bytes(b)).block('Team Info')
+        good = bool(infos) or (ti is not None and ti.get('Item Count') == '0')   # 01 TargDens
         for t in infos:
             for k in ('Spawn Point Name', 'Re-Spawn Point Name', 'Model Type'):
                 if t.get(k) is not None:
@@ -1638,6 +1642,108 @@ def _check_overlays(ds, report, mh):
         checks.append(len(sk) == 4 and near(sk[0].points[0], c) and sk[3].text == 'Patrol')
     got['failed'] = [i for i, c in enumerate(checks) if not c] or None
     report('AI overlays (shapes as the debug drawing of Zax.exe)', sum(checks), len(checks), got)
+
+
+def _check_malformed(ds, report):
+    import copy
+    import tempfile
+    from zaxtools import anim, children, level as level_mod, levelcheck, links, malformed, mdlfile, overlays, safepath
+    from zaxtools import textformat as tf2
+    checks = {}
+
+    def raises_value(fn, *args):
+        try:
+            fn(*args)
+        except ValueError:
+            return True
+        except Exception:           # noqa: BLE001 - any other type is the failure this checks
+            return False
+        return False
+
+    # a model sequence that claims 4 G frames (review4 G-2): refused before any list is sized
+    seq_tag = struct.pack('<ff', 27.0, 758.0)
+    bogus = b'\0' * 16 + seq_tag + struct.pack('<iIf', 0, 0xFFFFFFFF, 30.0) + b'\0' * 160
+    checks['mdl total 0xFFFFFFFF'] = raises_value(mdl.read_sequences, bogus) and raises_value(mdl.load, bogus)
+    # truncated files: ValueError, not struct.error/IndexError (review4 G-5, review 5 L1-4)
+    some_model = ds.read(ds.list('Cache/Models/', '.mdl16')[0])
+    some_seq = next(ds.read(f) for f in ds.list('Cache/', '.seq16') if ds.read(f)[:8] == seq.TAG)
+    some_way = ds.read(ds.list('Levels/', '.way')[0])
+    some_font = ds.read(ds.list('Cache/Fonts/', '.seq16')[0])
+    checks['truncated readers'] = all([
+        raises_value(mdl.read_sequences, some_model[:some_model.find(seq_tag) + 30]),
+        raises_value(seq.load, some_seq[:40]), raises_value(seq.load, some_seq[:-7]),
+        raises_value(font.load, some_font[:-5]), raises_value(way.loads, some_way[:-3]),
+        raises_value(way.loads, some_way[:30]), raises_value(frm.decode, b'\x01\x10' + b'\0' * 20),
+        raises_value(waymap.poly_from_model, b'xxPOLY2D\0\x07\xff\xff\xff\x00')])
+    checks['reader wrapper'] = raises_value(malformed.reader(lambda: [][1]))
+    # per-file pixel budget (review4 G-6)
+    try:
+        frm.check_budget(frm.MAX_FILE_PIXELS + 1, frm.MAX_FILE_PIXELS)
+        checks['pixel budget'] = False
+    except ValueError:
+        checks['pixel budget'] = True
+    # numbers: zero/NaN rotational range, tiny fps, a point sound, huge Max Distance, 1-pixel mini map rectangle
+    checks['rotation_index range 0/NaN'] = (mdl.rotation_index(1.0, 8, 0.0, 0.0) == 0 and
+                                            mdl.rotation_index(1.0, 8, 0.0, float('nan')) == 0)
+    checks['timed_next tiny fps'] = math.isfinite(anim.timed_next(1.0, 1e-9, 0))
+    pts, _ = overlays.sound_lines((0, 0), 0, 0, 1e7, 5.0)
+    checks['sound_lines radius 0, Max Distance 1e7'] = len(pts) <= overlays.MAX_SOUND_SAMPLES + 10
+    checks['mini map 20 -> 1 pixel'] = minimap.filter_resample(np.full((20, 20), 0x1234, np.uint16), 1, 1).shape == (1, 1)
+    # a far-off blocker does not fill millions of cells (review 5 P63-2)
+    big = waymap.poly_from_text('0, 0, 3000000, 0, 3000000, 3000000, 0, 3000000')
+    b = waymap.Builder(waymap.Inputs([], [waymap.Blocker(0, big, 0.0, 0.0, (big.left, big.top, big.right, big.bottom))]))
+    checks['way map far-off blocker'] = len(b.big) == 1 and not b.bcells and b.blocked(1000.0, 2.0, 5.0)
+    # Child List edits by identity (review 5 P56-1)
+    root = level_mod.LevelPart(tf2.Node('Level Part', 'CEntityAnimated', [tf2.Entry('Name', 'root')]))
+    ca = tf2.Node('Child', 'CEntityBase', [tf2.Entry('Name', 'A')])
+    children.add_child(root, ca)
+    children.add_child(root, tf2.Node('Child', 'CEntityBase', [tf2.Entry('Name', 'X')]))
+    cb = copy.deepcopy(ca)
+    children.add_child(root, cb)
+    children.remove_child(root, level_mod.LevelPart(cb))
+    kids = [c for c in children.child_array(root).children if isinstance(c, tf2.Node)]
+    checks['remove a duplicated child'] = kids[0] is ca and len(kids) == 2
+    # text: a label at the end of the file without a line end (P62-1), line ends in values (P62-3), ASCII folding (P62-6)
+    sc = rds.loads(b':A\r\nhello\r\n\r\n:B')
+    sc.set_text('B', 'Hi there')
+    checks['set_text after a last label'] = rds.loads(sc.dumps()).labels() == ['A', 'B']
+    checks['Node.set refuses a line end'] = raises_value(tf2.Node('x', 'C').set, 'a', 'b\r\nc=d')
+    sc = rds.loads(':Äpfel\r\nx\r\n'.encode('latin-1'))
+    checks['label lookup folds A-Z only'] = sc.find('äpfel') is None and sc.find('ÄPFEL') is not None and \
+        sc.find('Äpfel') is not None
+    # a level without Tree List (L1-5), new names (P60-5, P61-6), reversed range (P61-7), case-insensitive inside (P62-2)
+    checks['level without Tree List'] = raises_value(Level.from_bytes, b'CLayerSaveData\r\n{\r\n\tWidth=1\r\n}\r\n')
+    checks['new names'] = all(safepath.new_name_problem(n) for n in ('CON', 'nul.mdl16', 'a\tb', 'x.')) and \
+        safepath.new_name_problem('Crate 2') is None
+    checks['reference names'] = all(links.name_problem(n) for n in ('a,b', '$x', 'n #1-2#')) and \
+        links.name_problem('door left') is None
+    checks['reversed range'] = links.names_in('fig #50-1#') == ['fig #50-1#']
+    tmp = Path(tempfile.mkdtemp(prefix='zax-selftest-'))
+    try:
+        (tmp / 'CaseDir' / 'Data').mkdir(parents=True)
+        swapped = tmp / 'CaseDir' / 'Data' / 'x.zax'
+        other = Path(str(tmp / 'casedir' / 'data' / 'x.zax'))
+        case_blind = (tmp / 'casedir').exists()
+        checks['inside, other case'] = safepath.inside(swapped, tmp / 'CaseDir' / 'Data') and \
+            safepath.inside(other, tmp / 'CaseDir' / 'Data') == case_blind
+    finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+    # patrol "Random" with no point to choose (P60-1)
+    lv = newlevel.new_level('Test/Patrol', 2000, 1500, ['11 Dirt'])
+    path = tf2.Node('Level Part', 'CEntityBase', [tf2.Entry('Name', 'P'), tf2.Entry('Polygon', '0, 0, 10, 10')])
+    lv.insert_part(path)
+    ai = tf2.Node('Item', 'CPatrolPathAI', [tf2.Entry('Path Poly', 'P'), tf2.Entry('Order', 'Random'),
+                                             tf2.Entry('Ignore last point', '1')])
+    walker = tf2.Node('Level Part', 'CEntityWalking', [tf2.Entry('Name', 'W'), tf2.Entry('Position X', '5'),
+                                                       tf2.Entry('Position Y', '5'),
+                                                       tf2.Node('Activity', 'Array', [tf2.Entry('Item Count', '1'), ai])])
+    lv.insert_part(walker)
+    found = []
+    levelcheck._patrol(ai, level_mod.LevelPart(walker), '', lv, lambda c, *a: found.append(c))
+    checks['patrol Random, 0 points to choose'] = found == ['patrol-random-hang']
+    bad = [k for k, v in checks.items() if not v]
+    report('Malformed input and review edge cases (RV-9)', len(checks) - len(bad), len(checks), bad[:4] or '')
 
 
 if __name__ == '__main__':

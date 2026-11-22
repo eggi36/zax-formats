@@ -167,6 +167,10 @@ class Level:
     def __init__(self, doc: tf.Node):
         self.doc = doc
         self.root = tf.root(doc)
+        if self.root.block('Tree List') is None:
+            # every view on the objects needs it; without one, parts/find/insert_part raised AttributeError
+            # (review 5 L1-5): refused like any other unreadable level
+            raise ValueError('not a level: no "Tree List" block')
 
     # --- Load/save -----------------------------------------------------------
     @classmethod
@@ -270,13 +274,6 @@ class Level:
 
     elevations = property(lambda s: s._grid('Elevations'), lambda s, g: s._set_grid('Elevations', g))
     seeds = property(lambda s: s._grid('Seeds'), lambda s, g: s._set_grid('Seeds', g))
-
-    # --- Mini map ----------------------------------------------------------------
-    def minimap_transform(self):
-        """Function world (x, y) -> mini map pixel (px, py)."""
-        g = lambda k: float(self.root.get(k, '0'))
-        sx, ox, sy, oy = g('MiniMap X Scale'), g('MiniMap X Offset'), g('MiniMap Y Scale'), g('MiniMap Y Offset')
-        return lambda x, y: (x * sx + ox, y * sy + oy)
 
 
 GRID_CELL = 64   # spacing of the Plasma Ground grid points in world pixels

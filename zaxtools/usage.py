@@ -475,6 +475,8 @@ class _Analysis:
                         refs[aid].append(('speaker', 'Portrait', f'{sp} Portrait'))
         for aid, a in self.assets.items():          # quips: the sounds of their folder
             if a['list'] == 'quips':
+                if '/' not in a['rel']:     # a .quips file directly below Resources/ (review 5 P62-4): no folder
+                    continue
                 folder = 'quips/' + a['rel'].split('/', 1)[1].lower() + '/'
                 for bid, b in self.assets.items():
                     if b['list'] == 'quip_snd' and b['rel'].lower().startswith(folder):

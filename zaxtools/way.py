@@ -25,6 +25,7 @@ from __future__ import annotations
 import math
 import struct
 from dataclasses import dataclass, field
+from .malformed import reader
 
 OBJ_NODE = (27.0, 43.0)
 OBJ_EDGE = (27.0, 64.0)
@@ -57,6 +58,7 @@ class WayMap:
     head_unk: int = 0
 
 
+@reader
 def loads(data: bytes) -> WayMap:
     f0, f1, hu, mind, maxc, n = struct.unpack_from('<ffiiii', data, 0)
     if (f0, f1) != OBJ_NODE:

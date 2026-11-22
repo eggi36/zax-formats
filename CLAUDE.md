@@ -83,10 +83,13 @@ zaxtools/          library (numpy + Pillow only)
                    (Model.layers + the Editor Only handles), drawing order, frame index, backgrounds, frame
                    triggers (CAnimationTrigger) and their sounds, sequence node for the properties, sprite sheets,
                    writing a rotation/frame back through the game's encoder
-  fieldhelp.py     our own help texts for the 1,382 fields without an exe help text (4 music fields: props.EXTRA_HELP),
-                   additions to exe texts and notes on 46 wrong or incomplete exe texts, derived
+  fieldhelp.py     our own help texts for 1,382 of the 1,386 fields without an exe help text (4 music fields:
+                   props.EXTRA_HELP), additions to 194 exe texts (shown after them) and notes on 46 wrong or
+                   incomplete exe texts, derived
                    from zax-decomp/reimpl/src (evidence level + consumer addresses per field)
   i18n.py          translation hook for texts zaxtools makes for a UI (English; the editor installs Qt's translate)
+  malformed.py     one error type for malformed files: the binary readers (frm, seq, font, mdl, mdlfile, way, the
+                   model header, waymap.build) raise ValueError only, never struct.error/IndexError (review 2026-11-21)
   safepath.py      guards for writing: names from levels/scripts as safe relative paths, game files of any edition
                    read-only, atomic writes (temporary file + os.replace)
   levelcheck.py    level check: findings (severity, object, field, explanation, source) for what makes the game
