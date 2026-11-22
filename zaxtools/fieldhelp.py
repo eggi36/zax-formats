@@ -1,9 +1,12 @@
 """Our own help texts for the fields of the game's classes, derived from how the reimplementation
 (``zax-decomp/reimpl/src/``, every function verified equal to Zax.exe) reads and uses each field.
 
-Zax.exe has a help text for only 253 of its 1,639 registered fields (``exeschema.Schema.help``). ``HELP``
-describes the others: what the field does in the game, its units and notable effects. ``CORRECTIONS`` adds a
-note to exe help texts that the code contradicts or leaves incomplete. Keys are (registering class, field
+Zax.exe has a help text for only 253 of its 1,639 registered fields (``exeschema.Schema.help``). ``HELP`` holds
+two kinds of entries (1,576 on 2026-11-22): for 1,382 of the 1,386 fields without an exe text it describes the field
+(what it does in the game, its units and notable effects); for 194 fields with one it holds an addition that only makes
+sense after the exe text (the editor shows it there, ``props._help``; ``help_text`` alone would show a fragment such
+as "$Trigger is the generator object."). ``CORRECTIONS`` adds a note to exe help texts that the code contradicts or
+leaves incomplete; ``correction_text`` appends the field's ``HELP`` entry to it, so the two do not repeat each other. Keys are (registering class, field
 name), as ``exeschema.Schema.field`` gives them in ``owner``; values are (evidence level, the addresses of the
 functions that consume the field, the English text). Evidence: "confirmed" = read from the reimplementation,
 "verified" = also observed in the game, "assumption" = inferred, the text says what is assumed. The texts are
@@ -184,7 +187,7 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
     ('CDrawTimeoutOvalAI', 'Radius'): ('confirmed', '0x4cad40', QT_TRANSLATE_NOOP(
         'fieldhelp', "Horizontal radius in pixels of the oval the AI's debug drawing shows; the debug drawing is never reached"
         ' in the release game. No effect in the game.')),
-    ('CDrawTimeoutOvalAI', 'Aspect Ratio'): ('assumption', '0x4cad40', QT_TRANSLATE_NOOP(
+    ('CDrawTimeoutOvalAI', 'Aspect Ratio'): ('confirmed', '0x4cad40', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Height-to-width ratio of the oval of the debug drawing, which the release game never shows. No effect in'
         ' the game.')),
     ('CDrawTimeoutOvalAI', 'Seconds Left'): ('confirmed', '0x4cae00', QT_TRANSLATE_NOOP(
@@ -365,7 +368,7 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
     ('CGravityAI', 'BounceAction'): ('confirmed', '0x4ca7b0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Action run when the falling object hits Ground Height and the bounce does not already lift it within the'
         ' same step; the object is $Trigger and $Instigator.')),
-    ('CGravityAI', 'Ground Height'): ('assumption', '0x4ca7b0', QT_TRANSLATE_NOOP(
+    ('CGravityAI', 'Ground Height'): ('confirmed', '0x4ca7b0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Height in pixels at which the falling object bounces (its vertical speed reversed and scaled by the '
         "model's bounce factor). The AI forces a constant fall speed of about 321.5 pixels per second. Default 0.")),
     ('CIdleAI', 'Idle Behavior'): ('confirmed', '0x4cc7d0, 0x4cc800', QT_TRANSLATE_NOOP(
@@ -584,13 +587,13 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
     ('CGenericParticleSystemAI', 'Min Travel Distance'): ('confirmed', '0x52e2d0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Shortest distance in pixels a particle travels: its lifetime is lengthened so that speed × lifetime '
         'reaches at least this (default 0 = no minimum).')),
-    ('CGenericParticleSystemAI', 'Use Particle As Shot'): ('confirmed', '0x52e2d0', QT_TRANSLATE_NOOP(
+    ('CGenericParticleSystemAI', 'Use Particle As Shot'): ('assumption', '0x52e2d0', QT_TRANSLATE_NOOP(
         'fieldhelp', "1: each particle is created with the emitting object's top-most parent as its owner, like a shot fired "
         'by it (what that changes, e.g. who gets credited for damage, is assumed); 0: particles have no owner.')),
     ('CGenericParticleSystemAI', 'Make Child of Generator'): ('confirmed', '0x52e2d0, 0x52e080', QT_TRANSLATE_NOOP(
         'fieldhelp', '1: particles become children of the emitting object and move along with it; 0 (default): they are added '
         'to the layer and stay where they were emitted.')),
-    ('CGenericParticleSystemAI', 'Limit Duration To First Collision'): ('confirmed', '0x52e2d0', QT_TRANSLATE_NOOP(
+    ('CGenericParticleSystemAI', 'Limit Duration To First Collision'): ('assumption', '0x52e2d0', QT_TRANSLATE_NOOP(
         'fieldhelp', "1: each new particle is swept once through the layer's collision along its path and its remaining "
         'lifetime is then set to 0.1 s (meant for particles that end at the first obstacle; whether the sweep '
         'moves the particle is assumed).')),
@@ -606,7 +609,7 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
     ('CGenericParticleSystemAI', 'Enabled'): ('confirmed', '0x52e2d0, 0x52eef0', QT_TRANSLATE_NOOP(
         'fieldhelp', '1 (default): the system emits. 0: it stays silent until a "Particle System On" message; the system '
         'clears it itself on "Particle System Off" or when "Num Bursts To Stop After" is reached.')),
-    ('CGenericParticleSystemAI', 'Disable in multi-player'): ('confirmed', '0x52e2d0', QT_TRANSLATE_NOOP(
+    ('CGenericParticleSystemAI', 'Disable in multi-player'): ('assumption', '0x52e2d0', QT_TRANSLATE_NOOP(
         'fieldhelp', '1 (default): the system emits nothing while a game type is active that reports it should be off (a check'
         " of the game type, presumably 'multi-player'); 0: it always runs.")),
     ('CGenericParticleSystemAI', 'Choose Sound Based On Burst'): ('confirmed', '0x52e2d0', QT_TRANSLATE_NOOP(
@@ -1835,10 +1838,10 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'fieldhelp', "Vertical distance in pixels between the first and the second speaker's portrait. Default 103.")),
     ('CDialogDisplayOptions', 'Portrait Width'): ('confirmed', '0x47c2e0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Meant as the portrait width in pixels. Not read by the conversation window (only saved and loaded); the '
-        'window uses "Portrait Y1" + "Portrait YDist" and the portrait image\'s own size. Default 81.')),
+        'window draws the portrait image in its own size. Default 81.')),
     ('CDialogDisplayOptions', 'Portrait Height'): ('confirmed', '0x47c2e0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Meant as the portrait height in pixels. Not read by the conversation window (only saved and loaded); the'
-        ' window uses "Portrait Y1" + "Portrait YDist" and the portrait image\'s own size. Default 77.')),
+        ' window draws the portrait image in its own size. Default 77.')),
     ('CDialogDisplayOptions', 'Selection Light Upper X'): ('confirmed', '0x47c2e0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'X position in pixels of the selection light shown while the first (upper) speaker talks. Default 64.')),
     ('CDialogDisplayOptions', 'Selection Light Upper Y'): ('confirmed', '0x47c2e0', QT_TRANSLATE_NOOP(
@@ -1880,9 +1883,9 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
     ('CDialogDisplayOptions', 'Close Button Y Pos'): ('confirmed', '0x47bbd0', QT_TRANSLATE_NOOP(
         'fieldhelp', "Y position in pixels of the window's close button. Default 4.")),
     ('CDialogLine', 'Name'): ('verified', '0x41e0f0, 0x54e490, 0x591bd0', QT_TRANSLATE_NOOP(
-        'fieldhelp', "Label of a line in a dialogue script (.RDS, the line ':Label'). „Line“ of a CZaxDialogAction names it; "
-        'the lookup ignores case and takes the first label of that name. A name no action finds makes the game '
-        'exit.')),
+        'fieldhelp', "Label of a line in a dialogue script (.RDS, the line ':Label'). 'Line' of a CZaxDialogAction names it; "
+        'the lookup ignores the case of A-Z and takes the first label of that name. A "Line" naming a label the script '
+        'does not have makes the game exit.')),
     ('CDialogLine', 'Text'): ('verified', '0x41e010, 0x5a4bd0, 0x41e0f0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'The text of the line. Text before the first ": " (if it starts within the first 20 characters) is the '
         'speaker, which also picks the portrait; the rest is the shown line. Trailing white space is removed.')),
@@ -1894,7 +1897,7 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         "uses it as the bright middle of the end caps' gradient.")),
     ('CEnergyMeter', 'Charged Dim Color'): ('confirmed', '0x486d10, 0x4b3ab0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Energy meter colour (HUD) of the filled part, dark end: only a meter wider than tall uses it, as a '
-        'vertical gradient between this and „Charged Bright Color“ (bright at one third of the height).')),
+        'vertical gradient between this and "Charged Bright Color" (bright at one third of the height).')),
     ('CEnergyMeter', 'Charged Bright Color'): ('confirmed', '0x486d10, 0x4b3ab0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Energy meter colour (HUD) of the filled part: a meter taller than wide fills from the bottom in this '
         "colour on black; a wider one uses it as the bright line of the fill's gradient.")),
@@ -1903,19 +1906,19 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
     ('CEnergyMeter', 'Under Charged Bright Color'): ('confirmed', '0x486d10, 0x4868a0', QT_TRANSLATE_NOOP(
         'fieldhelp', "No effect in the game: the energy meter's drawing never reads this colour (only saved and loaded).")),
     ('CEntityBehaviorClearFlags', 'Visible'): ('confirmed', '0x497c10', QT_TRANSLATE_NOOP(
-        'fieldhelp', "When set (1), the behaviour clears the object's flag „Visible“ as soon as it begins, then removes itself"
+        'fieldhelp', "When set (1), the behaviour clears the object's flag \"Visible\" as soon as it begins, then removes itself"
         ' from the behaviour stack. 0 leaves that flag alone.')),
     ('CEntityBehaviorClearFlags', 'Collideable'): ('confirmed', '0x497c10', QT_TRANSLATE_NOOP(
-        'fieldhelp', "When set (1), the behaviour clears the object's flag „Collideable“ as soon as it begins, then removes "
+        'fieldhelp', "When set (1), the behaviour clears the object's flag \"Collideable\" as soon as it begins, then removes "
         'itself from the behaviour stack. 0 leaves that flag alone.')),
     ('CEntityBehaviorClearFlags', 'Tries To Collide'): ('confirmed', '0x497c10', QT_TRANSLATE_NOOP(
-        'fieldhelp', "When set (1), the behaviour clears the object's flag „Tries To Collide“ as soon as it begins, then "
+        'fieldhelp', "When set (1), the behaviour clears the object's flag \"Tries To Collide\" as soon as it begins, then "
         'removes itself from the behaviour stack. 0 leaves that flag alone.')),
     ('CEntityBehaviorClearFlags', 'Stationary'): ('confirmed', '0x497c10', QT_TRANSLATE_NOOP(
-        'fieldhelp', "When set (1), the behaviour clears the object's flag „Stationary“ as soon as it begins, then removes "
+        'fieldhelp', "When set (1), the behaviour clears the object's flag \"Stationary\" as soon as it begins, then removes "
         'itself from the behaviour stack. 0 leaves that flag alone.')),
     ('CEntityBehaviorClearFlags', 'Active'): ('confirmed', '0x497c10', QT_TRANSLATE_NOOP(
-        'fieldhelp', "When set (1), the behaviour clears the object's flag „Active“ as soon as it begins, then removes itself "
+        'fieldhelp', "When set (1), the behaviour clears the object's flag \"Active\" as soon as it begins, then removes itself "
         'from the behaviour stack. 0 leaves that flag alone.')),
     ('CEntityBehaviorExecuteAction', 'Action'): ('confirmed', '0x499790', QT_TRANSLATE_NOOP(
         'fieldhelp', "Action executed once when the behaviour begins, with the object as instigator in the object's layer. The"
@@ -1927,20 +1930,20 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'fieldhelp', 'Sequence that is set (at frame 0) when the behaviour begins and then played in a loop at its own frames '
         "per second. Empty keeps the object's current sequence.")),
     ('CEntityBehaviorPlaySequenceLooped', 'Playing Backwards'): ('confirmed', '0x499d50', QT_TRANSLATE_NOOP(
-        'fieldhelp', '1 plays the loop backwards (from the end wrapping to the last frame). With „Ping Pong“ the game switches'
-        ' this flag itself at each end. Ignored while „Synchronize“ is on.')),
+        'fieldhelp', '1 plays the loop backwards (from the end wrapping to the last frame). With "Ping Pong" the game switches'
+        ' this flag itself at each end. Ignored while "Synchronize" is on.')),
     ('CEntityBehaviorPlaySequenceLooped', 'Ping Pong'): ('confirmed', '0x499d50', QT_TRANSLATE_NOOP(
         'fieldhelp', '1 turns the playing direction at each end instead of jumping back to the start (forwards, then '
-        'backwards, …). Ignored while „Synchronize“ is on.')),
+        'backwards, …). Ignored while "Synchronize" is on.')),
     ('CEntityBehaviorPlaySequenceLooped', 'Synchronize'): ('confirmed', '0x499d50', QT_TRANSLATE_NOOP(
         'fieldhelp', '1 takes the frame from the global game clock instead of advancing it per object, so all objects with '
         'this sequence show the same frame; backwards and ping pong are ignored then.')),
     ('CEntityBehaviorPlaySequenceLooped', 'Playing'): ('confirmed', '0x499d50, 0x499f30, 0x499d10', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Whether the loop is running (1, default). Beginning the behaviour and the message „Start Animation“ set '
+        'fieldhelp', 'Whether the loop is running (1, default). Beginning the behaviour and the message "Start Animation" set '
         'it; with 0 the frame stands still. Mostly saved run-time state.')),
     ('CEntityBehaviorPlaySequenceLooped', 'Stoping'): ('confirmed', '0x499f30, 0x499d50', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Saved run-time state: set by the message „Stop Animation“; the loop then stops at its next end and the '
-        'behaviour ends. Beginning or „Start Animation“ clears it.')),
+        'fieldhelp', 'Saved run-time state: set by the message "Stop Animation"; the loop then stops at its next end and the '
+        'behaviour ends. Beginning or "Start Animation" clears it.')),
     ('CEntityBehaviorQueue', 'Behavior'): ('confirmed', '0x586f10, 0x586ef0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'The behaviours of the queue, run one after another: each begins when it becomes current and is updated '
         'until it reports done, then the next one follows. After the last one the queue is done; beginning it '
@@ -1956,20 +1959,20 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'also move faster or slower, negative plays backwards); the behaviour then removes itself. Values outside'
         ' -10..10 make the game report an error but are kept.')),
     ('CEntityBehaviorSetRotationSequence', 'Sequence'): ('confirmed', '0x4965b0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Sequence set on the object when the behaviour begins (it also clears „Stationary“); the behaviour then '
+        'fieldhelp', 'Sequence set on the object when the behaviour begins (it also clears "Stationary"); the behaviour then '
         'removes itself. If the model lacks the sequence, the behaviour fails and is dropped. Empty only clears '
-        '„Stationary“.')),
+        '"Stationary".')),
     ('CEntityBehaviorPlaySequenceOnce', 'Speed To Play'): ('confirmed', '0x496ee0, 0x497010', QT_TRANSLATE_NOOP(
         'fieldhelp', "Factor on the sequence's frames per second (-100..100, default 1). Negative plays the sequence backwards"
         ' from its last frame; 0 ends the behaviour at once.')),
     ('CEntityBehaviorPlaySequenceOnce', 'Done Sequence'): ('confirmed', '0x497010', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Sequence set when the played sequence has reached its end (default „Idle“). Empty leaves the object on '
+        'fieldhelp', 'Sequence set when the played sequence has reached its end (default "Idle"). Empty leaves the object on '
         'the end frame of the played sequence.')),
     ('CEntityBehaviorPlaySequenceOnce', 'Done Frame'): ('confirmed', '0x497010', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Frame of „Done Sequence“ shown afterwards (from 0). -1 means its last frame; values past the end are '
+        'fieldhelp', 'Frame of "Done Sequence" shown afterwards (from 0). -1 means its last frame; values past the end are '
         'clamped to the frame count.')),
     ('CEntityBehaviorPlaySequenceOnce', 'Was Stationary'): ('confirmed', '0x496ee0, 0x497010', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Saved run-time state: whether the object had „Stationary“ when the behaviour began; it gets the flag '
+        'fieldhelp', 'Saved run-time state: whether the object had "Stationary" when the behaviour began; it gets the flag '
         'back at the end.')),
     ('CEntityBehaviorPlaySequenceOnce', 'Old Play Ratio'): ('confirmed', '0x496ee0, 0x497270', QT_TRANSLATE_NOOP(
         'fieldhelp', "Saved run-time state: the object's play ratio before the behaviour (the behaviour sets it to 0 and moves"
@@ -1984,14 +1987,14 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'fieldhelp', "Full width of the search cone in degrees (1–360, default 90), centred on the object's facing; half of it"
         ' on each side.')),
     ('CEntityBehaviorStateSetClosestTarget', 'Must Be Collideable'): ('confirmed', '0x5867c0', QT_TRANSLATE_NOOP(
-        'fieldhelp', '1 (default): only objects with „Collideable“ can become the target. Active objects are required in any '
+        'fieldhelp', '1 (default): only objects with "Collideable" can become the target. Active objects are required in any '
         'case.')),
     ('CEntityBehaviorStateSetClosestTarget', 'Must Have HPs'): ('confirmed', '0x5867c0', QT_TRANSLATE_NOOP(
         'fieldhelp', '1 (default): only objects that have hit points can become the target.')),
     ('CEntityBehaviorStateSetClosestTarget', 'Valid Targets'): ('confirmed', '0x5867c0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Object categories that may become the target (default „Player“).')),
+        'fieldhelp', 'Object categories that may become the target (default "Player").')),
     ('CEntityBehaviorTurnToAngleBase', 'Old Stationary Flag'): ('confirmed', '0x494680, 0x4946b0', QT_TRANSLATE_NOOP(
-        'fieldhelp', "Saved run-time state: the object's „Stationary“ flag from before the turn (0 or 2097152); the turn "
+        'fieldhelp', "Saved run-time state: the object's \"Stationary\" flag from before the turn (0 or 2097152); the turn "
         'clears the flag and restores it when done. Leave unchanged in a level.')),
     ('CEntityBehaviorTurnToTarget', 'Point Weapon At Target'): ('confirmed', '0x4960f0, 0x495ec0', QT_TRANSLATE_NOOP(
         'fieldhelp', "1 measures the angle from the weapon's position instead of the object's centre, so the weapon points at "
@@ -2009,7 +2012,7 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'turn speed until it is within 0.1 radians; then the behaviour ends.')),
     ('CEntityBehaviorTurnToAngle', 'Facing Backwards'): ('confirmed', '0x495490, 0x430f20', QT_TRANSLATE_NOOP(
         'fieldhelp', 'No effect in the game: neither the turn nor the move behaviour reads this byte (only saved and loaded). '
-        "The object's own „Facing Backwards“ is a different field.")),
+        "The object's own \"Facing Backwards\" is a different field.")),
     ('CEntityBehaviorMoveToPos', 'Idle Behavior'): ('confirmed', '0x430f20', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Saved run-time state: the embedded idle behaviour the mover runs once it has arrived or found no way '
         '(plays the idle sequence and fidgets).')),
@@ -2056,13 +2059,13 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'fieldhelp', 'Saved run-time state: the helper that tests the target spot and the way for collisions during the way '
         'search.')),
     ('CEntityBehaviorMoveToPos', 'Sequence'): ('confirmed', '0x430940, 0x430a40', QT_TRANSLATE_NOOP(
-        'fieldhelp', "Sequence played while moving instead of „Walk“/„Run“/„Crouch“ by gait. Empty (default) uses the gait's "
+        'fieldhelp', "Sequence played while moving instead of \"Walk\"/\"Run\"/\"Crouch\" by gait. Empty (default) uses the gait's "
         'sequence; a name the model lacks is reported as an error.')),
     ('CEntityBehaviorWait', 'Num Seconds'): ('confirmed', '0x497f80, 0x4990e0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Duration in seconds (default 1) before the behaviour ends. The idle behaviour, which builds on it, also '
         'ends after this time.')),
     ('CEntityBehaviorWait', 'Seconds Have Transitioned'): ('confirmed', '0x497f80, 0x498600', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Saved run-time state: seconds elapsed so far; the behaviour ends once it reaches „Num Seconds“. Leave at'
+        'fieldhelp', 'Saved run-time state: seconds elapsed so far; the behaviour ends once it reaches "Num Seconds". Leave at'
         ' 0 in a level.')),
     ('CEntityBehaviorIdle', 'Override Fidget Options'): ('confirmed', '0x498fa0, 0x4990e0, 0x498e20', QT_TRANSLATE_NOOP(
         'fieldhelp', "Fidget settings used instead of the model's own. Fidgets only happen at all when the model itself has "
@@ -2079,10 +2082,10 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
     ('CEntityBehaviorIdle', 'Fidgeting'): ('confirmed', '0x4990e0, 0x498e20', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Saved run-time state: 1 while a fidget sequence plays instead of the idle sequence.')),
     ('CEntityBehaviorTransition', 'Transition In Or Out'): ('confirmed', '0x498600', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Direction of the fade: „Transition In“ fades the object in over „Num Seconds“, „Transition Out“ fades it'
+        'fieldhelp', 'Direction of the fade: "Transition In" fades the object in over "Num Seconds", "Transition Out" fades it'
         ' out.')),
     ('CEntityBehaviorWarpEffect', 'Warp In'): ('confirmed', '0x5aac90', QT_TRANSLATE_NOOP(
-        'fieldhelp', '1 (default) warps the object in: it fades in during the first third of „Warp Time“ while the effect dies'
+        'fieldhelp', '1 (default) warps the object in: it fades in during the first third of "Warp Time" while the effect dies'
         ' down afterwards. 0 warps it out: the effect builds up over two thirds, then the object fades out.')),
     ('CEntityBehaviorWarpEffect', 'Warp Time'): ('confirmed', '0x5aac90', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Duration of the warp in seconds (default 1).')),
@@ -2092,7 +2095,7 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
     ('CEntityBehaviorWarpEffect', 'Cur Warp Time'): ('confirmed', '0x5aac90', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Saved run-time state: seconds of the warp elapsed so far. Leave at 0 in a level.')),
     ('CEntityBehaviorWarpEffect', 'Was Stationary'): ('confirmed', '0x5aac50, 0x5aac90', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Saved run-time state: whether the object had „Stationary“ before the warp; the flag is set again at the '
+        'fieldhelp', 'Saved run-time state: whether the object had "Stationary" before the warp; the flag is set again at the '
         'end.')),
     ('CEntityBehaviorWarpEffect', 'WhoWereConnectedTo'): ('confirmed', '0x5aac50, 0x5aa760', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Saved run-time state: the object the effect was put on; the effect is taken off it when the behaviour is'
@@ -2104,31 +2107,31 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'fieldhelp', 'Saved run-time state: 1 when the top behaviour of the stack has begun.')),
     ('CEntityBehaviorStack', 'Blocking Priority'): ('confirmed', '0x49a560, 0x49a480', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Priority of what was pushed last (Idle, Interruptable, SouldComplete, MustComplete). A new behaviour '
-        'with a lower priority is refused; at „MustComplete“ nothing new is accepted until the stack is empty. '
-        'Falls back to „Idle“ when empty.')),
+        'with a lower priority is refused; at "MustComplete" nothing new is accepted until the stack is empty. '
+        'Falls back to "Idle" when empty.')),
     ('CEntityBehaviorStack', 'BehaviorList'): ('confirmed', '0x49a480, 0x49a560', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Saved run-time state: the behaviours on the stack, the last one is on top and runs.')),
     ('CEnvelope', 'Start Value'): ('confirmed', '0x49d730, 0x49d660', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Value the envelope starts from (-10000..10000; units depend on the use, e.g. seconds, degrees, pixels). '
-        'When the owner resets it, the value jumps here and runs towards „End Value“.')),
+        'When the owner resets it, the value jumps here and runs towards "End Value".')),
     ('CEnvelope', 'End Value'): ('confirmed', '0x49d660, 0x49d730', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Value the envelope runs to; it stops exactly there, then „Ending Behavior“ decides what follows. Equal '
-        'to „Start Value“ keeps a constant value.')),
+        'fieldhelp', 'Value the envelope runs to; it stops exactly there, then "Ending Behavior" decides what follows. Equal '
+        'to "Start Value" keeps a constant value.')),
     ('CEnvelope', 'Speed'): ('confirmed', '0x49d660', QT_TRANSLATE_NOOP(
         'fieldhelp', "Change of the value per second (in the value's units). Keep it positive: the direction towards the end "
         'value is chosen by the game; a negative speed runs away from the target and never arrives.')),
     ('CEnvelope', 'Ending Behavior'): ('confirmed', '0x49d660', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'What happens at the end: „Stop at end“ keeps the end value, „Restart from beginning“ jumps back to '
-        '„Start Value“ and runs again, „Reverse Direction“ runs back and forth between both values.')),
+        'fieldhelp', 'What happens at the end: "Stop at end" keeps the end value, "Restart from beginning" jumps back to '
+        '"Start Value" and runs again, "Reverse Direction" runs back and forth between both values.')),
     ('CEnvelope', 'Current Value'): ('confirmed', '0x49d660, 0x49d730, 0x52b5b0', QT_TRANSLATE_NOOP(
-        'fieldhelp', "Saved run-time state: the envelope's present value; the owner's reset sets it to „Start Value“ (particle"
+        'fieldhelp', "Saved run-time state: the envelope's present value; the owner's reset sets it to \"Start Value\" (particle"
         ' emitters reset their envelopes when they start).')),
     ('CEnvelope', 'Using Start'): ('confirmed', '0x49d660, 0x49d730', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Saved run-time state: 1 while the value runs towards „End Value“, 0 while it runs back to „Start Value“ '
+        'fieldhelp', 'Saved run-time state: 1 while the value runs towards "End Value", 0 while it runs back to "Start Value" '
         '(Reverse Direction). Set to 1 by a reset.')),
     ('CEnvelope', 'Direction'): ('confirmed', '0x49d660, 0x49d730', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Saved run-time state: 1 or -1, the sign of the movement; a reset sets 1 when „End Value“ is above „Start'
-        ' Value“, else -1.')),
+        'fieldhelp', 'Saved run-time state: 1 or -1, the sign of the movement; a reset sets 1 when "End Value" is above "Start'
+        ' Value", else -1.')),
     ('CFidgetSettings', 'Avg Time Between Fidgets'): ('confirmed', '0x4a02c0, 0x498fa0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Average time in seconds (default 20) between two fidget animations of an idling character. The first '
         'wait after the idle starts is random between 0.25 and 1.75 times this value.')),
@@ -2136,26 +2139,26 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'fieldhelp', 'Spread of the waits after a fidget (default 4): 0 waits exactly the average time; larger values give a '
         'random wait from 0 upwards around the average, with occasional long waits.')),
     ('CFidgetSettings', 'Fidget Sequence Order'): ('confirmed', '0x4a0680', QT_TRANSLATE_NOOP(
-        'fieldhelp', "Which of the model's „Fidget“ sequences plays (crouching: „FidgetCrouch“ ones): „First Sequence Only“, "
-        '„Random Order“, „Never Same Twice Consecutively“ (reports an error with only one). Original bugs: '
-        '„Shuffeled Order“ and „Special Shuffeled Order“ are not implemented (error, no fidget); „Sequential '
-        'Order“ never advances and always plays the same one.')),
+        'fieldhelp', "Which of the model's \"Fidget\" sequences plays (crouching: \"FidgetCrouch\" ones): \"First Sequence Only\", "
+        '"Random Order", "Never Same Twice Consecutively" (reports an error with only one). Original bugs: '
+        '"Shuffeled Order" and "Special Shuffeled Order" are not implemented (error, no fidget); "Sequential '
+        'Order" never advances and always plays the same one.')),
     ('CGroundTextureFrame', 'Damage'): ('confirmed', '0x48d7f0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Damage in hit points per second (0–9999) to living objects whose centre stands on ground of this '
-        "texture. Only with a „Damage Type“ other than none. Set in the texture's .txt file, not in levels.")),
+        "texture. Only with a \"Damage Type\" other than none. Set in the texture's .txt file, not in levels.")),
     ('CGroundTextureFrame', 'Damage Type'): ('confirmed', '0x48d7f0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Damage type of the ground damage; „!None“ (as in all shipped textures) switches the ground damage off.')),
+        'fieldhelp', 'Damage type of the ground damage; "!None" (as in all shipped textures) switches the ground damage off.')),
     ('CGroundTextureFrame', 'Surface Type'): ('confirmed', '0x4e9e60', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Surface of this ground texture (default „Generic“), e.g. for surface-dependent footstep sounds; it '
+        'fieldhelp', 'Surface of this ground texture (default "Generic"), e.g. for surface-dependent footstep sounds; it '
         'counts where no object at that point gives its own surface.')),
     ('CLayer', 'Save Data'): ('confirmed', '0x4ebe10, 0x4ec090', QT_TRANSLATE_NOOP(
         'fieldhelp', "The level's header (CLayerSaveData). A level file holds exactly this object's fields; it is not written "
         'as a separate field.')),
     ('CFrameOverlayOptions', 'Text Overlays'): ('confirmed', '0x4b52e0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Texts drawn onto a full-screen image (a .foo file in „Resources/Frame Overlay Options“ named like the '
+        'fieldhelp', 'Texts drawn onto a full-screen image (a .foo file in "Resources/Frame Overlay Options" named like the '
         "image, e.g. the demo's sell screens), each with font, position and wrapping.")),
     ('CFrameOverlayTextOverlay', 'Text Font'): ('confirmed', '0x4b52e0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Font of the text (default „Character Dialog“).')),
+        'fieldhelp', 'Font of the text (default "Character Dialog").')),
     ('CFrameOverlayTextOverlay', 'Text HotSpot Coordinates'): ('confirmed', '0x4b52e0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Position of the text on the image in pixels (x, y). Set it explicitly: the game gives it no default.')),
     ('CFrameOverlayTextOverlay', 'Text Wrapping Width'): ('confirmed', '0x4b52e0, 0x4a6790', QT_TRANSLATE_NOOP(
@@ -2167,19 +2170,19 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
     ('CFrameOverlayTextOverlay', 'Justification'): ('confirmed', '0x4b52e0, 0x4a6790', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Alignment of the text lines: left, centre or right (default left).')),
     ('CGameType', 'Game Name'): ('assumption', '0x4ce900', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Name of the game mode (e.g. „Death Match“, „Quest“). No code reading it was found, so its use is assumed'
+        'fieldhelp', 'Name of the game mode (e.g. "Death Match", "Quest"). No code reading it was found, so its use is assumed'
         ' (a display name).')),
     ('CGameType', 'Players Initial Inventory'): ('confirmed', '0x5433e0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Inventory a player gets at every (re)spawn: the inventory is emptied and filled from this one. Empty (as'
         ' in quest mode) leaves the player without items after a respawn.')),
     ('CGameType', 'Default Player Model'): ('assumption', '0x4ce900', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Model of the player character in this game mode (shipped: „Characters/Crater/Crater“ for quest, „Crater '
-        'Multiplayer“ for the multiplayer modes). No code reading it was found, so its effect is assumed.')),
+        'fieldhelp', 'Model of the player character in this game mode (shipped: "Characters/Crater/Crater" for quest, "Crater '
+        'Multiplayer" for the multiplayer modes). No code reading it was found, so its effect is assumed.')),
     ('CMultiPlayerGameType', 'Max Number of Teams'): ('confirmed', '0x51c010, 0x51bef0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Only used when „Is Team Game“ is 1: the number of teams of the match, joining players go to the smallest'
-        ' of them. „Unlimited“ (0) means up to 20 teams for the assignment.')),
+        'fieldhelp', 'Only used when "Is Team Game" is 1: the number of teams of the match, joining players go to the smallest'
+        ' of them. "Unlimited" (0) means up to 20 teams for the assignment.')),
     ('CMultiPlayerGameType', 'Is Team Game'): ('confirmed', '0x51bef0, 0x51c010, 0x51cba0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'In a team game a joining player goes to the smallest team (limited by „Max Number of Teams“), the score '
+        'fieldhelp', 'In a team game a joining player goes to the smallest team (limited by "Max Number of Teams"), the score '
         'boards draw players in the blue/red team fonts and the team count is set for the match; otherwise every '
         'player gets a team of their own.')),
     ('CMultiPlayerGameType', 'All Teams Share Spawn Points'): ('confirmed', '0x468f20, 0x4f4950', QT_TRANSLATE_NOOP(
@@ -2209,9 +2212,9 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
     ('CMultiPlayerGameType', 'Mini-ScoreBoard Red Flag Font'): ('confirmed', '0x51cba0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Font of the flag mark next to a flag carrier who is not on the red team (i.e. the red flag).')),
     ('CMultiPlayerGameType', 'Mini-ScoreBoard Blue Flag String'): ('confirmed', '0x51cba0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Text of the flag mark shown next to a red-team player carrying a flag (default „*“).')),
+        'fieldhelp', 'Text of the flag mark shown next to a red-team player carrying a flag (default "*").')),
     ('CMultiPlayerGameType', 'Mini-ScoreBoard Red Flag String'): ('confirmed', '0x51cba0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Text of the flag mark shown next to any other flag carrier (default „*“).')),
+        'fieldhelp', 'Text of the flag mark shown next to any other flag carrier (default "*").')),
     ('CMultiPlayerGameType', 'Mini-ScoreBoard Rank X'): ('confirmed', '0x51cba0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'X position in pixels on the mini score board of the column with the rank number (no heading) (default '
         "10); the column's justification is relative to it.")),
@@ -2255,8 +2258,8 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'fieldhelp', 'Alignment of the mini score board column with the second extra number of the game mode (only when not 0,'
         ' no heading) at its X position: left, centre or right.')),
     ('CMultiPlayerGameType', 'Mini-ScoreBoard Rules Justification'): ('confirmed', '0x51cba0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Alignment of the rule lines (time and score limit) at the bottom of the mini score board: left (at „Line'
-        ' Spacing“ pixels from the left edge), centre, or right (the same distance from the right edge).')),
+        'fieldhelp', 'Alignment of the rule lines (time and score limit) at the bottom of the mini score board: left (at "Line'
+        ' Spacing" pixels from the left edge), centre, or right (the same distance from the right edge).')),
     ('CMultiPlayerGameType', 'Mini-ScoreBoard Line Spacing'): ('confirmed', '0x51cba0', QT_TRANSLATE_NOOP(
         'fieldhelp', "Extra pixels between the rows of the mini score board (default 2). Also used as the rule lines' distance"
         ' from the bottom and the side edge.')),
@@ -2460,7 +2463,7 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         "item's text line.")),
     ('CCountInventoryDetailRenderer', 'Font'): ('confirmed', '0x5b12d0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Font of the count text in the inventory detail view.')),
-    ('CDeployableInventoryDetailRenderer', 'Format'): ('confirmed', '0x47af90, 0x47b150', QT_TRANSLATE_NOOP(
+    ('CDeployableInventoryDetailRenderer', 'Format'): ('assumption', '0x47af90, 0x47b150', QT_TRANSLATE_NOOP(
         'fieldhelp', "Text shown in the inventory detail view for a deployable item; its %d is replaced by the item's value "
         '(its damage fraction, judging by the default text) times 100, %% gives a percent sign. Drawn centred at '
         '45, 20 pixels from the detail position and used as the item\'s text line. Default "Damage: %d%%".')),
@@ -3012,7 +3015,8 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'message.')),
     ('CCharacterInventoryItemDefinition', 'Level'): ('confirmed', '0x580070, 0x580bd0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'The ability\'s levels in order, each with description, "Charge Time" (seconds to charge fully), '
-        '"Duration" (seconds of use), activate sound and activate/deactivate actions.')),
+        '"Duration" (seconds of use) and the "Deactivate Action" run when it ends; its activate sound and action are '
+        'never used (nothing in the release activates a special ability that way).')),
     ('CInventoryItemHolder', 'The Item'): ('confirmed', '0x424da0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Only for old level files: an inventory\'s legacy "Inventory Holders" block wraps each item in such a '
         'holder, and the item is moved into the inventory when loading.')),
@@ -3473,7 +3477,7 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'unchanged in a level.')),
     ('CLayerSaveData', 'Path Data'): ('verified', '0x4e70d0, 0x4eca80, 0x5383f0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'The way-point map (MinDistBetweenWayPoints, MaxDistToConnect). The game loads the network from the '
-        "level's .way file or builds it with its own fixed values (20 and 39.8), whatever the level holds here.")),
+        "level's .way file or builds it with its own fixed values (20 and 39: the 39.8 it passes is truncated), whatever the level holds here.")),
     ('CLayerSaveData', 'Fog Of War'): ('confirmed', '0x4e71b0, 0x508000, 0x508180', QT_TRANSLATE_NOOP(
         'fieldhelp', "Fog map of the mini map (one pixel per mini-map pixel; 0 = uncovered); the view's area is uncovered as "
         'the player moves. When a level starts fresh (Has Begin Been Called 0) the game recreates it at mini-map '
@@ -3908,8 +3912,7 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         "once. The player as target makes the player's camera tracker move there; any other part gets a temporary"
         ' camera tracker.')),
     ('CNonInteractiveSequenceScene', 'Camera Speed'): ('confirmed', '0x521ef0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Speed in pixels per second, default 150. 0 ("Immediately") makes the camera jump and the scene arrive at'
-        ' once.')),
+        'fieldhelp', 'Default 150; 0 also makes the scene arrive at once.')),
     ('CNonInteractiveSequenceScene', 'Camera Arrived Action'): ('confirmed', '0x522060, 0x522110', QT_TRANSLATE_NOOP(
         'fieldhelp', 'The action runs with the player as instigator. The scene itself does not end on arrival; it ends only '
         'when an "End Current Non Interactive Sequence Scene" action is executed, after which the next scene '
@@ -4060,8 +4063,6 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
     ('CQuestGameTypeSpecificData', 'Stat Data List'): ('confirmed', '0x5528c0, 0x5527f0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Saved run-time state of the quest game: one data object per statistic (scores of this mission and of the'
         ' missions before). Leave unchanged.')),
-    ('CQuestStat', 'Hide This Stat'): ('confirmed', '0x554b80, 0x5527f0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'A hidden statistic still counts toward the total score when it has a point value.')),
     ('CQuestStat', 'Hide Par Score'): ('confirmed', '0x554ce0, 0x5533e0', QT_TRANSLATE_NOOP(
         'fieldhelp', "It suppresses the statistic's second row (the par label and the par values) in the mission-over window.")),
     ('CQuestStat', 'Point Value Weighting'): ('confirmed', '0x554d10, 0x555200', QT_TRANSLATE_NOOP(
@@ -4137,7 +4138,7 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'fieldhelp', 'The par percentage shown is numerator × 100 / denominator.')),
     ('CQuestPercentageParScore', 'Par Denominator This Mission'): ('confirmed', '0x55a300, 0x55a410', QT_TRANSLATE_NOOP(
         'fieldhelp', 'A denominator not above 0 shows a placeholder instead of a par percentage.')),
-    ('CQuestTimeParScore', 'Par Time This Mission'): ('confirmed', '0x558280, 0x5582e0', QT_TRANSLATE_NOOP(
+    ('CQuestTimeParScore', 'Par Time This Mission'): ('assumption', '0x558280, 0x5582e0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'A time (shown as a duration, assumed in seconds) set per mission in its par statistics list.')),
     ('CQuipCategory', 'Delay Before Saying'): ('confirmed', '0x55b770, 0x55b730, 0x55bd50', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Seconds; 0 is treated as 0.01. A re-trigger while the quip is still waiting also restarts the "Minimum '
@@ -4305,7 +4306,7 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'fieldhelp', "Thresholds (CThresholdTrigger) on the Sphere of Zin's charge: each fires its action when the charge "
         'crosses its value in the chosen direction.')),
     ('CSphereOfZinOptions', 'Evil Unit Lenght'): ('confirmed', '0x584d40', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Squared distance in pixels² (default 40000, i.e. 200 pixels; Rules.txt sets 102400, i.e. 320 pixels).')),
+        'fieldhelp', 'Default 40000, i.e. 200 pixels; Rules.txt sets 102400, i.e. 320 pixels.')),
     ('CSphereOfZinOptions', 'Apply Ceiling Prematurely'): ('confirmed', '0x584d40', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Default 1.')),
     ('CStatsInventoryItem', 'Item Catagory'): ('confirmed', '0x5b7e20, 0x564090', QT_TRANSLATE_NOOP(
@@ -4417,8 +4418,6 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         '"...".')),
     ('CVoiceLogDisplayPageOptions', 'Dialog Column Width'): ('confirmed', '0x5950c0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Pixels (default 80); 0 makes the column fill the rest of the header width.')),
-    ('CVoiceLogDisplayPageOptions', 'Column Header Font'): ('confirmed', '0x5948b0, 0x5950c0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Has no effect in the game.')),
     ('CVoiceLogDisplayPageOptions', 'List X Position'): ('confirmed', '0x5950c0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Pixels, relative to the voice log page of the inventory screen.')),
     ('CVoiceLogDisplayPageOptions', 'List Y Position'): ('confirmed', '0x5950c0', QT_TRANSLATE_NOOP(
@@ -4441,15 +4440,9 @@ HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         'fieldhelp', 'Pixels, relative to the voice log page of the inventory screen.')),
     ('CVoiceLogDisplayPageOptions', 'Replay Button Y Pos'): ('confirmed', '0x5950c0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Pixels, relative to the voice log page of the inventory screen.')),
-    ('CVoiceLogDisplayPageOptions', 'Replay Button Width'): ('confirmed', '0x5948b0, 0x5950c0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Has no effect in the game.')),
-    ('CVoiceLogDisplayPageOptions', 'Replay Button Height'): ('confirmed', '0x5948b0, 0x5950c0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Has no effect in the game.')),
     ('CVoiceLogDisplayPageOptions', 'Replay Button Text'): ('confirmed', '0x5948b0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'A localisable text entry (default "Replay"). The button replays the selected line and the lines recorded'
         ' at the same moment after it.')),
-    ('CVoiceLogDisplayPageOptions', 'Replay Button Font'): ('confirmed', '0x5948b0', QT_TRANSLATE_NOOP(
-        'fieldhelp', 'Has no effect in the game.')),
     ('CVoiceLogElement', 'Dialog Action'): ('confirmed', '0x592900, 0x5953d0', QT_TRANSLATE_NOOP(
         'fieldhelp', 'Saved run-time state of the voice log: a copy of the dialogue action that said the line; Replay runs it '
         'again. Leave unchanged.')),
